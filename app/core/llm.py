@@ -1,4 +1,5 @@
 import os
+import re
 from groq import Groq
 
 SYSTEM_PROMPT = """You are DocuBot, a helpful assistant that answers questions strictly \
@@ -6,6 +7,7 @@ based on the provided document context. Rules:
 - Only use information found in the context below.
 - If the answer isn't in the context, say you don't have enough information — do not guess.
 - Keep answers concise and cite which source chunk(s) you used by their doc_id.
+- Respond directly with the final answer. Do NOT output thinking, reasoning, or <think> tags.
 """
 
 
@@ -34,7 +36,7 @@ def get_best_model(client: Groq) -> str:
                 return cand
         for m_id in active_ids:
             lower_m = m_id.lower()
-            if not any(bad in lower_m for bad in ["whisper", "guard", "safeguard", "embed", "classification"]):
+            if not any(bad in lower_m for bad in ["whisper", "guard", "safeguard", "embed", "classification", "deepseek-r1"]):
                 return m_id
     except Exception:
         pass
@@ -66,12 +68,11 @@ def generate_answer(question: str, context_chunks: list[dict], history: list[dic
         try:
             response = client.chat.completions.create(
                 model=model_name,
-                max_tokens=500,
+                max_tokens=1024,
                 messages=messages,
             )
             content = response.choices[0].message.content or ""
-            if "</think>" in content:
-                content = content.split("</think>")[-1].strip()
+            content = re.sub(r"<think>.*?(?:</think>|$)", "", content, flags=re.DOTALL).strip()
             return content
 
         except Exception as e:
