@@ -3,393 +3,420 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DocuBot — RAG Document Chatbot</title>
+  <title>DocuBot — Easy RAG Document Chat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #0f172a;
-      --panel-bg: rgba(30, 41, 59, 0.7);
-      --border-color: rgba(255, 255, 255, 0.1);
-      --accent-blue: #3b82f6;
-      --accent-purple: #8b5cf6;
-      --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      --text-main: #f8fafc;
+      --bg: #0f172a;
+      --sidebar-bg: #1e293b;
+      --card-bg: #334155;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --text: #f8fafc;
       --text-muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.08);
+      --success: #10b981;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', sans-serif;
-      background: var(--bg-dark);
-      background-image: 
-        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
-      color: var(--text-main);
+      background-color: var(--bg);
+      color: var(--text);
       height: 100vh;
       display: flex;
-      flex-direction: column;
       overflow: hidden;
     }
 
-    header {
-      padding: 1rem 2rem;
-      border-bottom: 1px solid var(--border-color);
-      backdrop-filter: blur(12px);
-      background: rgba(15, 23, 42, 0.8);
+    /* Left Sidebar */
+    .sidebar {
+      width: 320px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      flex-direction: column;
+      padding: 1.25rem;
+      gap: 1.25rem;
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.15rem;
     }
-
-    .brand-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--accent-gradient);
-      border-radius: 10px;
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
-      font-size: 1.2rem;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      font-size: 1.1rem;
     }
 
-    .brand-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-
-    .status-pill {
+    /* Big Upload Button */
+    .upload-btn-big {
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 0.9rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 0.85rem;
-      background: rgba(34, 197, 94, 0.1);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.2);
-      padding: 0.35rem 0.75rem;
-      border-radius: 9999px;
+      justify-content: center;
+      gap: 0.6rem;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+      transition: all 0.2s ease;
     }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background: #22c55e;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #22c55e;
+    .upload-btn-big:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
     }
+    #file-input { display: none; }
 
-    .main-container {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    /* Sidebar */
-    .sidebar {
-      width: 340px;
-      border-right: 1px solid var(--border-color);
-      background: var(--panel-bg);
-      backdrop-filter: blur(16px);
-      padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-
-    .section-title {
-      font-size: 0.9rem;
-      font-weight: 600;
+    /* Active Documents List */
+    .section-label {
+      font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--text-muted);
-      margin-bottom: 0.75rem;
-    }
-
-    .upload-box {
-      border: 2px dashed rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
-      padding: 1.5rem 1rem;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .upload-box:hover {
-      border-color: var(--accent-blue);
-      background: rgba(59, 130, 246, 0.05);
-    }
-
-    .upload-box input {
-      display: none;
-    }
-
-    .btn {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      background: var(--accent-gradient);
-      border: none;
-      border-radius: 8px;
-      color: white;
       font-weight: 600;
-      font-size: 0.9rem;
-      cursor: pointer;
-      transition: opacity 0.2s ease;
+      margin-top: 0.5rem;
+    }
+
+    .doc-list {
+      flex: 1;
+      overflow-y: auto;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column;
       gap: 0.5rem;
     }
-
-    .btn:hover {
-      opacity: 0.9;
+    .doc-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .doc-item-name {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .text-area-ingest {
-      width: 100%;
-      height: 100px;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+    /* Paste Text Modal / Box */
+    .paste-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       padding: 0.75rem;
-      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .paste-textarea {
+      width: 100%;
+      height: 80px;
+      background: transparent;
+      border: none;
+      color: white;
       font-family: inherit;
       font-size: 0.85rem;
       resize: none;
     }
-
-    .text-area-ingest:focus {
-      outline: none;
-      border-color: var(--accent-blue);
+    .paste-textarea:focus { outline: none; }
+    .btn-secondary {
+      background: var(--card-bg);
+      color: white;
+      border: 1px solid var(--border);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
     }
+    .btn-secondary:hover { background: #475569; }
 
-    .store-stats {
-      margin-top: auto;
-      background: rgba(15, 23, 42, 0.6);
-      padding: 1rem;
-      border-radius: 10px;
-      border: 1px solid var(--border-color);
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    /* Chat Area */
-    .chat-area {
+    /* Main Chat Container */
+    .chat-container {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: rgba(15, 23, 42, 0.4);
+      background: var(--bg);
     }
 
-    .messages-container {
+    /* Header */
+    .chat-header {
+      padding: 1rem 1.75rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--success);
+      background: rgba(16, 185, 129, 0.1);
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--success);
+      border-radius: 50%;
+    }
+
+    /* Message List */
+    .messages-list {
       flex: 1;
       padding: 2rem;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 1.25rem;
     }
 
-    .message {
+    /* Hero Empty State */
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      max-width: 480px;
+      padding: 2rem;
+    }
+    .empty-icon {
+      font-size: 3.5rem;
+      margin-bottom: 1rem;
+    }
+    .empty-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .empty-desc {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Chat Bubbles */
+    .msg-row {
       display: flex;
       flex-direction: column;
-      max-width: 80%;
-      animation: fadeIn 0.3s ease;
+      max-width: 75%;
     }
+    .msg-row.user { align-self: flex-end; }
+    .msg-row.bot { align-self: flex-start; }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .message.user {
-      align-self: flex-end;
-    }
-
-    .message.assistant {
-      align-self: flex-start;
-    }
-
-    .bubble {
-      padding: 1rem 1.25rem;
-      border-radius: 14px;
-      line-height: 1.6;
+    .msg-bubble {
+      padding: 0.9rem 1.15rem;
+      border-radius: 12px;
       font-size: 0.95rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      line-height: 1.55;
     }
-
-    .message.user .bubble {
-      background: var(--accent-gradient);
+    .msg-row.user .msg-bubble {
+      background: var(--accent);
       color: white;
       border-bottom-right-radius: 2px;
     }
-
-    .message.assistant .bubble {
-      background: rgba(30, 41, 59, 0.9);
-      border: 1px solid var(--border-color);
+    .msg-row.bot .msg-bubble {
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
       border-bottom-left-radius: 2px;
     }
 
-    .sources-accordion {
-      margin-top: 0.75rem;
-      background: rgba(15, 23, 42, 0.5);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      overflow: hidden;
-      font-size: 0.8rem;
-    }
-
-    .sources-header {
-      padding: 0.5rem 0.75rem;
+    /* Citations */
+    .citation-box {
+      margin-top: 0.5rem;
       background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.78rem;
       color: var(--text-muted);
-      cursor: pointer;
-      font-weight: 500;
     }
 
-    .sources-content {
-      padding: 0.75rem;
-      border-top: 1px solid var(--border-color);
-      color: #cbd5e1;
+    /* Input Bar */
+    .input-container {
+      padding: 1.25rem 2rem;
+      border-top: 1px solid var(--border);
+    }
+    .input-wrapper {
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
       gap: 0.5rem;
     }
-
-    .source-item {
-      background: rgba(255, 255, 255, 0.03);
-      padding: 0.4rem 0.6rem;
-      border-radius: 4px;
-      display: flex;
-      justify-content: space-between;
+    .input-wrapper:focus-within {
+      border-color: var(--accent);
     }
-
-    .input-bar {
-      padding: 1.25rem 2rem;
-      border-top: 1px solid var(--border-color);
-      background: rgba(15, 23, 42, 0.8);
-      backdrop-filter: blur(12px);
-      display: flex;
-      gap: 1rem;
+    .attach-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0.4rem;
+      border-radius: 6px;
+      transition: color 0.2s;
     }
+    .attach-btn:hover { color: white; background: rgba(255, 255, 255, 0.05); }
 
     .chat-input {
       flex: 1;
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 0.85rem 1.25rem;
-      color: var(--text-main);
-      font-family: inherit;
+      background: transparent;
+      border: none;
+      color: white;
       font-size: 0.95rem;
+      font-family: inherit;
+      padding: 0.4rem;
     }
+    .chat-input:focus { outline: none; }
 
-    .chat-input:focus {
-      outline: none;
-      border-color: var(--accent-blue);
+    .send-icon-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
     }
+    .send-icon-btn:hover { background: var(--accent-hover); }
 
-    .send-btn {
-      width: auto;
-      padding: 0 1.75rem;
+    /* Notification Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #10b981;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+      display: none;
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
   </style>
 </head>
 <body>
 
-  <header>
+  <!-- Left Sidebar -->
+  <div class="sidebar">
     <div class="brand">
-      <div class="brand-icon">D</div>
-      <div class="brand-title">DocuBot RAG Assistant</div>
+      <div class="brand-logo">🤖</div>
+      <span>DocuBot</span>
     </div>
-    <div class="status-pill">
-      <div class="status-dot"></div>
-      <span id="health-status">Backend Connected</span>
-    </div>
-  </header>
 
-  <div class="main-container">
-    <!-- Sidebar -->
-    <div class="sidebar">
-      <div>
-        <div class="section-title">Ingest Document File</div>
-        <div class="upload-box" onclick="document.getElementById('file-input').click()">
-          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📄</div>
-          <div style="font-size: 0.85rem; color: var(--text-muted);">
-            Click to upload <strong>.txt</strong> or <strong>.md</strong>
-          </div>
-          <input type="file" id="file-input" accept=".txt,.md" onchange="uploadFile(event)">
+    <!-- Upload Button -->
+    <button class="upload-btn-big" onclick="document.getElementById('file-input').click()">
+      <span>📤 Upload Document</span>
+    </button>
+    <input type="file" id="file-input" accept=".txt,.md" onchange="handleFileUpload(event)">
+
+    <div class="section-label">Active Documents</div>
+    <div class="doc-list" id="doc-list">
+      <div class="doc-item">
+        <div class="doc-item-name">
+          <span>📄</span>
+          <span>about_docubot.md</span>
         </div>
+        <span style="color: var(--success); font-size: 0.75rem;">Ingested</span>
       </div>
+    </div>
 
-      <div>
-        <div class="section-title">Or Paste Direct Text</div>
-        <textarea id="text-input" class="text-area-ingest" placeholder="Paste document content here..."></textarea>
-        <button class="btn" style="margin-top: 0.5rem;" onclick="ingestText()">
-          Ingest Text
+    <div class="section-label">Or Paste Plain Text</div>
+    <div class="paste-box">
+      <textarea id="paste-text" class="paste-textarea" placeholder="Paste custom text here..."></textarea>
+      <button class="btn-secondary" onclick="handleTextIngest()">Save & Ingest Text</button>
+    </div>
+  </div>
+
+  <!-- Main Chat Container -->
+  <div class="chat-container">
+    <div class="chat-header">
+      <div style="font-weight: 600;">Document Grounded Chatbot</div>
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span>Backend Ready</span>
+      </div>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="messages-list" id="messages-list">
+      <!-- Empty Hero State -->
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">📚</div>
+        <div class="empty-title">Welcome to DocuBot</div>
+        <div class="empty-desc">
+          Upload any <strong>.txt</strong> or <strong>.md</strong> document on the left (or click the 📎 button below), then ask questions grounded in your document!
+        </div>
+        <button class="upload-btn-big" style="margin: 0 auto;" onclick="document.getElementById('file-input').click()">
+          📤 Upload Your First Document
         </button>
       </div>
-
-      <div class="store-stats">
-        <span>Chunks in Vector Store:</span>
-        <strong id="chunk-count" style="color: var(--accent-blue);">0</strong>
-      </div>
     </div>
 
-    <!-- Chat Area -->
-    <div class="chat-area">
-      <div class="messages-container" id="messages">
-        <div class="message assistant">
-          <div class="bubble">
-            Hello! I am <strong>DocuBot</strong>. Ingest your documents on the left panel, and ask me any question grounded in their content!
-          </div>
-        </div>
-      </div>
-
-      <div class="input-bar">
+    <!-- Input Bar -->
+    <div class="input-container">
+      <div class="input-wrapper">
+        <button class="attach-btn" title="Upload Document" onclick="document.getElementById('file-input').click()">📎</button>
         <input 
           type="text" 
-          id="user-input" 
+          id="chat-input" 
           class="chat-input" 
-          placeholder="Ask a question about your ingested documents..."
-          onkeydown="if(event.key === 'Enter') sendMessage()"
+          placeholder="Ask a question about your documents..." 
+          onkeydown="if(event.key==='Enter') sendQuestion()"
         >
-        <button class="btn send-btn" onclick="sendMessage()">Send</button>
+        <button class="send-icon-btn" onclick="sendQuestion()">➔</button>
       </div>
     </div>
   </div>
 
+  <!-- Notification Toast -->
+  <div class="toast" id="toast"></div>
+
   <script>
-    async function checkHealth() {
-      try {
-        const res = await fetch('/health');
-        if (res.ok) {
-          document.getElementById('health-status').innerText = 'Backend Connected';
-        }
-      } catch (e) {
-        document.getElementById('health-status').innerText = 'Server Offline';
-      }
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 3500);
     }
 
-    async function uploadFile(event) {
+    async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
@@ -400,19 +427,19 @@
         const res = await fetch('/ingest/file', { method: 'POST', body: formData });
         const data = await res.json();
         if (res.ok) {
-          document.getElementById('chunk-count').innerText = data.total_chunks_in_store;
-          alert(`Successfully ingested "${file.name}"! Chunks added: ${data.chunks_added}`);
+          addDocToList(file.name);
+          showToast(`Successfully ingested "${file.name}"!`);
         } else {
-          alert('Error: ' + (data.detail || 'Ingest failed'));
+          alert('Upload failed: ' + (data.detail || 'Error uploading file'));
         }
-      } catch (err) {
-        alert('Upload failed: ' + err.message);
+      } catch (e) {
+        alert('Error: ' + e.message);
       }
     }
 
-    async function ingestText() {
-      const text = document.getElementById('text-input').value.trim();
-      if (!text) return alert('Please enter text to ingest.');
+    async function handleTextIngest() {
+      const text = document.getElementById('paste-text').value.trim();
+      if (!text) return alert('Please enter text first.');
 
       try {
         const res = await fetch('/ingest/text', {
@@ -422,26 +449,46 @@
         });
         const data = await res.json();
         if (res.ok) {
-          document.getElementById('chunk-count').innerText = data.total_chunks_in_store;
-          document.getElementById('text-input').value = '';
-          alert(`Text ingested! Chunks added: ${data.chunks_added}`);
+          document.getElementById('paste-text').value = '';
+          addDocToList('Pasted Snippet (' + data.doc_id + ')');
+          showToast('Text ingested successfully!');
         } else {
-          alert('Error: ' + (data.detail || 'Ingest failed'));
+          alert('Ingest failed: ' + data.detail);
         }
-      } catch (err) {
-        alert('Ingest failed: ' + err.message);
+      } catch (e) {
+        alert('Error: ' + e.message);
       }
     }
 
-    async function sendMessage() {
-      const inputEl = document.getElementById('user-input');
-      const question = inputEl.value.trim();
+    function addDocToList(docName) {
+      const docList = document.getElementById('doc-list');
+      const item = document.createElement('div');
+      item.className = 'doc-item';
+      item.innerHTML = `
+        <div class="doc-item-name">
+          <span>📄</span>
+          <span>${docName}</span>
+        </div>
+        <span style="color: var(--success); font-size: 0.75rem;">Ingested</span>
+      `;
+      docList.appendChild(item);
+    }
+
+    async function sendQuestion() {
+      const input = document.getElementById('chat-input');
+      const question = input.value.trim();
       if (!question) return;
 
-      appendMessage('user', question);
-      inputEl.value = '';
+      // Hide empty state if visible
+      const emptyState = document.getElementById('empty-state');
+      if (emptyState) emptyState.style.display = 'none';
 
-      const loadingMsgEl = appendMessage('assistant', 'Thinking...');
+      // Append user msg
+      appendMessage('user', question);
+      input.value = '';
+
+      // Append bot loading
+      const loadingDiv = appendMessage('bot', 'Searching document context...');
 
       try {
         const res = await fetch('/chat', {
@@ -451,74 +498,56 @@
         });
         const data = await res.json();
 
-        loadingMsgEl.remove();
+        loadingDiv.remove();
 
         if (res.ok) {
-          appendAssistantResponse(data.answer, data.sources);
+          appendBotResponse(data.answer, data.sources);
         } else {
-          appendMessage('assistant', 'Error: ' + (data.detail || 'Failed to generate response'));
+          appendMessage('bot', 'Error: ' + (data.detail || 'Could not generate answer'));
         }
-      } catch (err) {
-        loadingMsgEl.remove();
-        appendMessage('assistant', 'Error connecting to backend: ' + err.message);
+      } catch (e) {
+        loadingDiv.remove();
+        appendMessage('bot', 'Error connecting to backend server.');
       }
     }
 
     function appendMessage(role, text) {
-      const container = document.getElementById('messages');
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `message ${role}`;
+      const list = document.getElementById('messages-list');
+      const row = document.createElement('div');
+      row.className = `msg-row ${role}`;
 
       const bubble = document.createElement('div');
-      bubble.className = 'bubble';
+      bubble.className = 'msg-bubble';
       bubble.innerText = text;
 
-      msgDiv.appendChild(bubble);
-      container.appendChild(msgDiv);
-      container.scrollTop = container.scrollHeight;
-      return msgDiv;
+      row.appendChild(bubble);
+      list.appendChild(row);
+      list.scrollTop = list.scrollHeight;
+      return row;
     }
 
-    function appendAssistantResponse(answer, sources) {
-      const container = document.getElementById('messages');
-      const msgDiv = document.createElement('div');
-      msgDiv.className = 'message assistant';
+    function appendBotResponse(answer, sources) {
+      const list = document.getElementById('messages-list');
+      const row = document.createElement('div');
+      row.className = 'msg-row bot';
 
       const bubble = document.createElement('div');
-      bubble.className = 'bubble';
+      bubble.className = 'msg-bubble';
       bubble.innerHTML = answer.replace(/\n/g, '<br>');
 
+      row.appendChild(bubble);
+
       if (sources && sources.length > 0) {
-        const accordion = document.createElement('div');
-        accordion.className = 'sources-accordion';
-
-        const header = document.createElement('div');
-        header.className = 'sources-header';
-        header.innerText = `📌 Cited Sources (${sources.length})`;
-
-        const content = document.createElement('div');
-        content.className = 'sources-content';
-
-        sources.forEach(src => {
-          const item = document.createElement('div');
-          item.className = 'source-item';
-          item.innerHTML = `<span>${src.doc_id}</span><span style="opacity: 0.7;">Score: ${src.score.toFixed(3)}</span>`;
-          content.appendChild(item);
-        });
-
-        accordion.appendChild(header);
-        accordion.appendChild(content);
-        msgDiv.appendChild(bubble);
-        msgDiv.appendChild(accordion);
-      } else {
-        msgDiv.appendChild(bubble);
+        const citation = document.createElement('div');
+        citation.className = 'citation-box';
+        const docNames = [...new Set(sources.map(s => s.doc_id))].join(', ');
+        citation.innerHTML = `📌 <strong>Sources cited:</strong> ${docNames}`;
+        row.appendChild(citation);
       }
 
-      container.appendChild(msgDiv);
-      container.scrollTop = container.scrollHeight;
+      list.appendChild(row);
+      list.scrollTop = list.scrollHeight;
     }
-
-    checkHealth();
   </script>
 </body>
 </html>
