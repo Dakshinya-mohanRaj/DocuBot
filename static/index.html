@@ -8,80 +8,68 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    /* Theme Presets */
-    :root[data-theme="indigo"] {
-      --bg: #0f172a;
-      --sidebar-bg: #1e293b;
-      --card-bg: #334155;
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --accent-grad: linear-gradient(135deg, #6366f1, #a855f7);
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --border: rgba(255, 255, 255, 0.08);
+    /* Double Colour (Dual-Tone) Themes */
+    :root[data-theme="dual-blue-purple"] {
+      --sidebar-bg: #090d16;
+      --chat-bg: #111827;
+      --card-bg: #1f2937;
+      --border: rgba(99, 102, 241, 0.2);
+      --accent-1: #2563eb;
+      --accent-2: #9333ea;
+      --accent-grad: linear-gradient(135deg, #2563eb 0%, #9333ea 100%);
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
       --success: #10b981;
     }
 
-    :root[data-theme="ocean"] {
-      --bg: #08131d;
-      --sidebar-bg: #0f2334;
-      --card-bg: #1a384e;
-      --accent: #06b6d4;
-      --accent-hover: #0891b2;
-      --accent-grad: linear-gradient(135deg, #06b6d4, #10b981);
-      --text: #f0fdf4;
-      --text-muted: #94a3b8;
-      --border: rgba(255, 255, 255, 0.1);
+    :root[data-theme="dual-emerald-cyan"] {
+      --sidebar-bg: #041410;
+      --chat-bg: #0b1f1b;
+      --card-bg: #13332c;
+      --border: rgba(16, 185, 129, 0.2);
+      --accent-1: #059669;
+      --accent-2: #06b6d4;
+      --accent-grad: linear-gradient(135deg, #059669 0%, #06b6d4 100%);
+      --text: #ecfdf5;
+      --text-muted: #6ee7b7;
       --success: #34d399;
     }
 
-    :root[data-theme="cyber"] {
-      --bg: #0e091b;
-      --sidebar-bg: #1c1333;
-      --card-bg: #2d1e4e;
-      --accent: #ec4899;
-      --accent-hover: #db2777;
-      --accent-grad: linear-gradient(135deg, #ec4899, #8b5cf6);
-      --text: #fdf2f8;
-      --text-muted: #a78bfa;
-      --border: rgba(255, 255, 255, 0.1);
-      --success: #f43f5e;
-    }
-
-    :root[data-theme="gold"] {
-      --bg: #121212;
-      --sidebar-bg: #1e1e1e;
-      --card-bg: #2d2d2d;
-      --accent: #f59e0b;
-      --accent-hover: #d97706;
-      --accent-grad: linear-gradient(135deg, #f59e0b, #ef4444);
-      --text: #fffbeb;
-      --text-muted: #a1a1aa;
-      --border: rgba(255, 255, 255, 0.1);
+    :root[data-theme="dual-crimson-amber"] {
+      --sidebar-bg: #18070b;
+      --chat-bg: #240c12;
+      --card-bg: #3b141e;
+      --border: rgba(225, 29, 72, 0.2);
+      --accent-1: #e11d48;
+      --accent-2: #f59e0b;
+      --accent-grad: linear-gradient(135deg, #e11d48 0%, #f59e0b 100%);
+      --text: #fff1f2;
+      --text-muted: #fda4af;
       --success: #fbbf24;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', sans-serif;
-      background-color: var(--bg);
+      background-color: var(--chat-bg);
       color: var(--text);
       height: 100vh;
       display: flex;
       overflow: hidden;
-      transition: background-color 0.3s ease, color 0.3s ease;
+      transition: all 0.3s ease;
     }
 
-    /* Left Sidebar */
+    /* Left Sidebar - Colour 1 */
     .sidebar {
       width: 320px;
       background: var(--sidebar-bg);
-      border-right: 1px solid var(--border);
+      border-right: 2px solid var(--border);
       display: flex;
       flex-direction: column;
       padding: 1.25rem;
       gap: 1.25rem;
-      transition: background-color 0.3s ease;
+      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
     }
 
     .brand {
@@ -92,15 +80,15 @@
       font-size: 1.15rem;
     }
     .brand-logo {
-      width: 34px;
-      height: 34px;
+      width: 38px;
+      height: 38px;
       background: var(--accent-grad);
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.1rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      font-size: 1.2rem;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     }
 
     /* Big Upload Button */
@@ -117,12 +105,12 @@
       align-items: center;
       justify-content: center;
       gap: 0.6rem;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
       transition: all 0.2s ease;
     }
     .upload-btn-big:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.1);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
     }
     #file-input { display: none; }
 
@@ -144,7 +132,7 @@
       gap: 0.5rem;
     }
     .doc-item {
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
       padding: 0.75rem 0.9rem;
       border-radius: 8px;
@@ -187,27 +175,27 @@
       background: var(--card-bg);
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 0.5rem;
+      padding: 0.53rem;
       border-radius: 6px;
       font-size: 0.8rem;
       font-weight: 600;
       cursor: pointer;
     }
-    .btn-secondary:hover { filter: brightness(1.2); }
+    .btn-secondary:hover { filter: brightness(1.25); }
 
-    /* Main Chat Container */
+    /* Main Chat Canvas - Colour 2 */
     .chat-container {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: var(--bg);
-      transition: background-color 0.3s ease;
+      background: var(--chat-bg);
+      transition: all 0.3s ease;
     }
 
     /* Header */
     .chat-header {
       padding: 1rem 1.75rem;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 2px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -227,12 +215,13 @@
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 0.35rem 0.65rem;
+      padding: 0.4rem 0.75rem;
       font-size: 0.85rem;
       font-family: inherit;
       cursor: pointer;
+      font-weight: 600;
     }
-    .theme-select:focus { outline: none; border-color: var(--accent); }
+    .theme-select:focus { outline: none; border-color: var(--accent-1); }
 
     .status-badge {
       display: flex;
@@ -240,16 +229,17 @@
       gap: 0.5rem;
       font-size: 0.8rem;
       color: var(--success);
-      background: rgba(16, 185, 129, 0.1);
-      padding: 0.3rem 0.75rem;
+      background: rgba(16, 185, 129, 0.12);
+      padding: 0.35rem 0.8rem;
       border-radius: 20px;
-      border: 1px solid rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.25);
     }
     .status-dot {
-      width: 6px;
-      height: 6px;
+      width: 7px;
+      height: 7px;
       background: var(--success);
       border-radius: 50%;
+      box-shadow: 0 0 8px var(--success);
     }
 
     /* Message List */
@@ -274,18 +264,18 @@
       margin-bottom: 1rem;
     }
     .empty-title {
-      font-size: 1.4rem;
+      font-size: 1.5rem;
       font-weight: 700;
       margin-bottom: 0.5rem;
     }
     .empty-desc {
       color: var(--text-muted);
       font-size: 0.95rem;
-      line-height: 1.5;
+      line-height: 1.55;
       margin-bottom: 1.5rem;
     }
 
-    /* Chat Bubbles */
+    /* Chat Bubbles - High Contrast Dual Colors */
     .msg-row {
       display: flex;
       flex-direction: column;
@@ -295,10 +285,11 @@
     .msg-row.bot { align-self: flex-start; }
 
     .msg-bubble {
-      padding: 0.9rem 1.15rem;
-      border-radius: 12px;
+      padding: 0.95rem 1.25rem;
+      border-radius: 14px;
       font-size: 0.95rem;
-      line-height: 1.55;
+      line-height: 1.6;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
     }
     .msg-row.user .msg-bubble {
       background: var(--accent-grad);
@@ -306,7 +297,7 @@
       border-bottom-right-radius: 2px;
     }
     .msg-row.bot .msg-bubble {
-      background: var(--sidebar-bg);
+      background: var(--card-bg);
       border: 1px solid var(--border);
       border-bottom-left-radius: 2px;
     }
@@ -314,7 +305,7 @@
     /* Citations */
     .citation-box {
       margin-top: 0.5rem;
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 0.5rem 0.75rem;
@@ -325,10 +316,11 @@
     /* Input Bar */
     .input-container {
       padding: 1.25rem 2rem;
-      border-top: 1px solid var(--border);
+      border-top: 2px solid var(--border);
+      background: var(--sidebar-bg);
     }
     .input-wrapper {
-      background: var(--sidebar-bg);
+      background: var(--chat-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
       display: flex;
@@ -337,7 +329,8 @@
       gap: 0.5rem;
     }
     .input-wrapper:focus-within {
-      border-color: var(--accent);
+      border-color: var(--accent-1);
+      box-shadow: 0 0 12px rgba(37, 99, 235, 0.3);
     }
     .attach-btn {
       background: transparent;
@@ -349,7 +342,7 @@
       border-radius: 6px;
       transition: color 0.2s;
     }
-    .attach-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+    .attach-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
 
     .chat-input {
       flex: 1;
@@ -366,29 +359,31 @@
       background: var(--accent-grad);
       color: white;
       border: none;
-      width: 36px;
-      height: 36px;
+      width: 38px;
+      height: 38px;
       border-radius: 8px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: bold;
+      font-size: 1.1rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
-    .send-icon-btn:hover { filter: brightness(1.1); }
+    .send-icon-btn:hover { transform: scale(1.04); }
 
     /* Notification Toast */
     .toast {
       position: fixed;
       bottom: 2rem;
       right: 2rem;
-      background: var(--accent);
+      background: var(--accent-grad);
       color: white;
       padding: 0.75rem 1.25rem;
       border-radius: 8px;
       font-size: 0.9rem;
       font-weight: 500;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.4);
       display: none;
       animation: slideUp 0.3s ease;
     }
@@ -398,9 +393,9 @@
     }
   </style>
 </head>
-<body data-theme="ocean">
+<body data-theme="dual-blue-purple">
 
-  <!-- Left Sidebar -->
+  <!-- Left Sidebar (Colour 1) -->
   <div class="sidebar">
     <div class="brand">
       <div class="brand-logo">🤖</div>
@@ -431,7 +426,7 @@
     </div>
   </div>
 
-  <!-- Main Chat Container -->
+  <!-- Main Chat Canvas (Colour 2) -->
   <div class="chat-container">
     <div class="chat-header">
       <div style="font-weight: 600;">Document Grounded Chatbot</div>
@@ -439,12 +434,11 @@
       <!-- Theme Switcher & Status -->
       <div style="display: flex; align-items: center; gap: 1rem;">
         <div class="theme-selector">
-          <span>Theme:</span>
+          <span>Double Colour Theme:</span>
           <select id="theme-select" class="theme-select" onchange="changeTheme(this.value)">
-            <option value="ocean">🌊 Emerald Ocean</option>
-            <option value="indigo">🌌 Midnight Indigo</option>
-            <option value="cyber">⚡ Cyberpunk Pink</option>
-            <option value="gold">👑 Obsidian Gold</option>
+            <option value="dual-blue-purple">🎨 Blue & Neon Purple</option>
+            <option value="dual-emerald-cyan">💎 Emerald & Cyan</option>
+            <option value="dual-crimson-amber">🔥 Crimson & Amber Gold</option>
           </select>
         </div>
         
@@ -496,7 +490,7 @@
     }
 
     // Load saved theme
-    const savedTheme = localStorage.getItem('docubot_theme') || 'ocean';
+    const savedTheme = localStorage.getItem('docubot_theme') || 'dual-blue-purple';
     document.body.setAttribute('data-theme', savedTheme);
     document.getElementById('theme-select').value = savedTheme;
 
