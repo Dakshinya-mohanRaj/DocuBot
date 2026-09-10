@@ -344,7 +344,7 @@
     <button class="upload-btn-big" onclick="document.getElementById('file-input').click()">
       <span>📤 Upload Document</span>
     </button>
-    <input type="file" id="file-input" accept=".txt,.md" onchange="handleFileUpload(event)">
+    <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md" onchange="handleFileUpload(event)">
 
     <div class="section-label">Active Documents</div>
     <div class="doc-list" id="doc-list">
@@ -381,7 +381,7 @@
         <div class="empty-icon">📚</div>
         <div class="empty-title">Welcome to DocuBot</div>
         <div class="empty-desc">
-          Upload any <strong>.txt</strong> or <strong>.md</strong> document on the left (or click the 📎 button below), then ask questions grounded in your document!
+          Upload any <strong>.pdf</strong>, <strong>.docx</strong>, <strong>.xlsx</strong>, <strong>.csv</strong>, <strong>.txt</strong>, or <strong>.md</strong> document, then ask questions grounded in your content!
         </div>
         <button class="upload-btn-big" style="margin: 0 auto;" onclick="document.getElementById('file-input').click()">
           📤 Upload Your First Document
