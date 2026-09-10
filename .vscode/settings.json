@@ -1,7 +1,20 @@
 {
   "python.defaultInterpreterPath": "./venv/bin/python",
   "python.pythonPath": "./venv/bin/python",
-  "python.analysis.extraPaths": [
-    "./venv/lib/python3.13/site-packages"
-  ]
+  "python.analysis.exclude": [
+    "**/venv/**",
+    "**/.venv/**",
+    "**/data/**"
+  ],
+  "python.analysis.ignore": [
+    "**/venv/**",
+    "**/.venv/**"
+  ],
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/__pycache__": true,
+    "**/venv": false,
+    "**/.venv": false
+  }
 }
