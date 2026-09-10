@@ -3,21 +3,62 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DocuBot — Easy RAG Document Chat</title>
+  <title>DocuBot — RAG Document Chat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root {
+    /* Theme Presets */
+    :root[data-theme="indigo"] {
       --bg: #0f172a;
       --sidebar-bg: #1e293b;
       --card-bg: #334155;
       --accent: #6366f1;
       --accent-hover: #4f46e5;
+      --accent-grad: linear-gradient(135deg, #6366f1, #a855f7);
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --border: rgba(255, 255, 255, 0.08);
       --success: #10b981;
+    }
+
+    :root[data-theme="ocean"] {
+      --bg: #08131d;
+      --sidebar-bg: #0f2334;
+      --card-bg: #1a384e;
+      --accent: #06b6d4;
+      --accent-hover: #0891b2;
+      --accent-grad: linear-gradient(135deg, #06b6d4, #10b981);
+      --text: #f0fdf4;
+      --text-muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.1);
+      --success: #34d399;
+    }
+
+    :root[data-theme="cyber"] {
+      --bg: #0e091b;
+      --sidebar-bg: #1c1333;
+      --card-bg: #2d1e4e;
+      --accent: #ec4899;
+      --accent-hover: #db2777;
+      --accent-grad: linear-gradient(135deg, #ec4899, #8b5cf6);
+      --text: #fdf2f8;
+      --text-muted: #a78bfa;
+      --border: rgba(255, 255, 255, 0.1);
+      --success: #f43f5e;
+    }
+
+    :root[data-theme="gold"] {
+      --bg: #121212;
+      --sidebar-bg: #1e1e1e;
+      --card-bg: #2d2d2d;
+      --accent: #f59e0b;
+      --accent-hover: #d97706;
+      --accent-grad: linear-gradient(135deg, #f59e0b, #ef4444);
+      --text: #fffbeb;
+      --text-muted: #a1a1aa;
+      --border: rgba(255, 255, 255, 0.1);
+      --success: #fbbf24;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -28,6 +69,7 @@
       height: 100vh;
       display: flex;
       overflow: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
 
     /* Left Sidebar */
@@ -39,6 +81,7 @@
       flex-direction: column;
       padding: 1.25rem;
       gap: 1.25rem;
+      transition: background-color 0.3s ease;
     }
 
     .brand {
@@ -51,17 +94,18 @@
     .brand-logo {
       width: 34px;
       height: 34px;
-      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      background: var(--accent-grad);
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1.1rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     /* Big Upload Button */
     .upload-btn-big {
-      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      background: var(--accent-grad);
       color: white;
       border: none;
       border-radius: 10px;
@@ -73,12 +117,12 @@
       align-items: center;
       justify-content: center;
       gap: 0.6rem;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
       transition: all 0.2s ease;
     }
     .upload-btn-big:hover {
       transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+      filter: brightness(1.1);
     }
     #file-input { display: none; }
 
@@ -118,7 +162,7 @@
       text-overflow: ellipsis;
     }
 
-    /* Paste Text Modal / Box */
+    /* Paste Text Box */
     .paste-box {
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid var(--border);
@@ -130,10 +174,10 @@
     }
     .paste-textarea {
       width: 100%;
-      height: 80px;
+      height: 75px;
       background: transparent;
       border: none;
-      color: white;
+      color: var(--text);
       font-family: inherit;
       font-size: 0.85rem;
       resize: none;
@@ -141,7 +185,7 @@
     .paste-textarea:focus { outline: none; }
     .btn-secondary {
       background: var(--card-bg);
-      color: white;
+      color: var(--text);
       border: 1px solid var(--border);
       padding: 0.5rem;
       border-radius: 6px;
@@ -149,7 +193,7 @@
       font-weight: 600;
       cursor: pointer;
     }
-    .btn-secondary:hover { background: #475569; }
+    .btn-secondary:hover { filter: brightness(1.2); }
 
     /* Main Chat Container */
     .chat-container {
@@ -157,6 +201,7 @@
       display: flex;
       flex-direction: column;
       background: var(--bg);
+      transition: background-color 0.3s ease;
     }
 
     /* Header */
@@ -166,7 +211,29 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      background: var(--sidebar-bg);
     }
+    
+    /* Theme Selector Dropdown */
+    .theme-selector {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .theme-select {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .theme-select:focus { outline: none; border-color: var(--accent); }
+
     .status-badge {
       display: flex;
       align-items: center;
@@ -234,7 +301,7 @@
       line-height: 1.55;
     }
     .msg-row.user .msg-bubble {
-      background: var(--accent);
+      background: var(--accent-grad);
       color: white;
       border-bottom-right-radius: 2px;
     }
@@ -282,13 +349,13 @@
       border-radius: 6px;
       transition: color 0.2s;
     }
-    .attach-btn:hover { color: white; background: rgba(255, 255, 255, 0.05); }
+    .attach-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 
     .chat-input {
       flex: 1;
       background: transparent;
       border: none;
-      color: white;
+      color: var(--text);
       font-size: 0.95rem;
       font-family: inherit;
       padding: 0.4rem;
@@ -296,7 +363,7 @@
     .chat-input:focus { outline: none; }
 
     .send-icon-btn {
-      background: var(--accent);
+      background: var(--accent-grad);
       color: white;
       border: none;
       width: 36px;
@@ -308,14 +375,14 @@
       justify-content: center;
       font-weight: bold;
     }
-    .send-icon-btn:hover { background: var(--accent-hover); }
+    .send-icon-btn:hover { filter: brightness(1.1); }
 
     /* Notification Toast */
     .toast {
       position: fixed;
       bottom: 2rem;
       right: 2rem;
-      background: #10b981;
+      background: var(--accent);
       color: white;
       padding: 0.75rem 1.25rem;
       border-radius: 8px;
@@ -331,7 +398,7 @@
     }
   </style>
 </head>
-<body>
+<body data-theme="ocean">
 
   <!-- Left Sidebar -->
   <div class="sidebar">
@@ -368,9 +435,23 @@
   <div class="chat-container">
     <div class="chat-header">
       <div style="font-weight: 600;">Document Grounded Chatbot</div>
-      <div class="status-badge">
-        <div class="status-dot"></div>
-        <span>Backend Ready</span>
+      
+      <!-- Theme Switcher & Status -->
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div class="theme-selector">
+          <span>Theme:</span>
+          <select id="theme-select" class="theme-select" onchange="changeTheme(this.value)">
+            <option value="ocean">🌊 Emerald Ocean</option>
+            <option value="indigo">🌌 Midnight Indigo</option>
+            <option value="cyber">⚡ Cyberpunk Pink</option>
+            <option value="gold">👑 Obsidian Gold</option>
+          </select>
+        </div>
+        
+        <div class="status-badge">
+          <div class="status-dot"></div>
+          <span>Backend Ready</span>
+        </div>
       </div>
     </div>
 
@@ -409,6 +490,16 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    function changeTheme(themeName) {
+      document.body.setAttribute('data-theme', themeName);
+      localStorage.setItem('docubot_theme', themeName);
+    }
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('docubot_theme') || 'ocean';
+    document.body.setAttribute('data-theme', savedTheme);
+    document.getElementById('theme-select').value = savedTheme;
+
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.innerText = msg;
@@ -479,15 +570,12 @@
       const question = input.value.trim();
       if (!question) return;
 
-      // Hide empty state if visible
       const emptyState = document.getElementById('empty-state');
       if (emptyState) emptyState.style.display = 'none';
 
-      // Append user msg
       appendMessage('user', question);
       input.value = '';
 
-      // Append bot loading
       const loadingDiv = appendMessage('bot', 'Searching document context...');
 
       try {
