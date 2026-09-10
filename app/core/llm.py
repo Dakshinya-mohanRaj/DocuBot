@@ -33,7 +33,8 @@ def get_best_model(client: Groq) -> str:
             if cand in active_ids:
                 return cand
         for m_id in active_ids:
-            if "whisper" not in m_id.lower() and "safeguard" not in m_id.lower():
+            lower_m = m_id.lower()
+            if not any(bad in lower_m for bad in ["whisper", "guard", "safeguard", "embed", "classification"]):
                 return m_id
     except Exception:
         pass
@@ -57,7 +58,7 @@ def generate_answer(question: str, context_chunks: list[dict], history: list[dic
     client = get_client()
     selected_model = get_best_model(client)
 
-    # Try selected model first, with fallbacks if model_not_found occurs
+    # Try selected model first, with fallbacks across CANDIDATE_MODELS
     models_to_try = [selected_model] + [m for m in CANDIDATE_MODELS if m != selected_model]
     last_exception = None
 
@@ -75,8 +76,6 @@ def generate_answer(question: str, context_chunks: list[dict], history: list[dic
 
         except Exception as e:
             last_exception = e
-            if "model_not_found" in str(e) or "404" in str(e):
-                continue
-            break
+            continue
 
     raise RuntimeError(f"Groq API Error: {str(last_exception)}") from last_exception
