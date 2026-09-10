@@ -18,11 +18,10 @@ def get_client() -> Groq:
 
 
 CANDIDATE_MODELS = [
-    "llama-3.1-8b-instant",
     "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
     "mixtral-8x7b-32768",
     "gemma2-9b-it",
-    "llama-3.2-3b-preview",
 ]
 
 
@@ -39,7 +38,6 @@ def get_best_model(client: Groq) -> str:
     except Exception:
         pass
     return "llama-3.1-8b-instant"
-
 
 
 def generate_answer(question: str, context_chunks: list[dict], history: list[dict]) -> str:
@@ -67,7 +65,7 @@ def generate_answer(question: str, context_chunks: list[dict], history: list[dic
         try:
             response = client.chat.completions.create(
                 model=model_name,
-                max_tokens=800,
+                max_tokens=500,
                 messages=messages,
             )
             content = response.choices[0].message.content or ""
