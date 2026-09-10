@@ -1,0 +1,9 @@
+{
+  "exclude": [
+    "**/venv",
+    "**/.venv",
+    "**/data"
+  ],
+  "venvPath": ".",
+  "venv": "venv"
+}
