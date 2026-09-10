@@ -28,10 +28,12 @@ def chat(payload: ChatRequest):
 
     session_id = payload.session_id or str(uuid.uuid4())[:8]
 
-    hits = query(payload.message, n_results=payload.top_k)
-    history = as_llm_messages(session_id)
-
-    answer = generate_answer(payload.message, hits, history)
+    try:
+        hits = query(payload.message, n_results=payload.top_k)
+        history = as_llm_messages(session_id)
+        answer = generate_answer(payload.message, hits, history)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     append_turn(session_id, "user", payload.message)
     append_turn(session_id, "assistant", answer)
@@ -39,3 +41,4 @@ def chat(payload: ChatRequest):
     sources = [{"doc_id": h["doc_id"], "score": round(h["score"], 4)} for h in hits]
 
     return ChatResponse(session_id=session_id, answer=answer, sources=sources)
+

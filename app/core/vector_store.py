@@ -22,6 +22,10 @@ def add_chunks(doc_id: str, chunks: list[str]) -> int:
 
 
 def query(question: str, n_results: int = 4) -> list[dict]:
+    count = collection_count()
+    if count == 0:
+        return []
+    n_results = min(n_results, count)
     results = _collection.query(query_texts=[question], n_results=n_results)
     if not results["documents"] or not results["documents"][0]:
         return []
