@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocuBot — RAG Document Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.7);
+      --border-color: rgba(255, 255, 255, 0.1);
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      background: rgba(15, 23, 42, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: var(--accent-gradient);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      background: rgba(34, 197, 94, 0.1);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #22c55e;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #22c55e;
+    }
+
+    .main-container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 340px;
+      border-right: 1px solid var(--border-color);
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .upload-box {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .upload-box:hover {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .upload-box input {
+      display: none;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--accent-gradient);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    .text-area-ingest {
+      width: 100%;
+      height: 100px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.85rem;
+      resize: none;
+    }
+
+    .text-area-ingest:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .store-stats {
+      margin-top: auto;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Chat Area */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    .messages-container {
+      flex: 1;
+      padding: 2rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 80%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.user {
+      align-self: flex-end;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+    }
+
+    .bubble {
+      padding: 1rem 1.25rem;
+      border-radius: 14px;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .message.user .bubble {
+      background: var(--accent-gradient);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.assistant .bubble {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 2px;
+    }
+
+    .sources-accordion {
+      margin-top: 0.75rem;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.8rem;
+    }
+
+    .sources-header {
+      padding: 0.5rem 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .sources-content {
+      padding: 0.75rem;
+      border-top: 1px solid var(--border-color);
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .source-item {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.4rem 0.6rem;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .input-bar {
+      padding: 1.25rem 2rem;
+      border-top: 1px solid var(--border-color);
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(12px);
+      display: flex;
+      gap: 1rem;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 0.85rem 1.25rem;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+
+    .chat-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .send-btn {
+      width: auto;
+      padding: 0 1.75rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-icon">D</div>
+      <div class="brand-title">DocuBot RAG Assistant</div>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot"></div>
+      <span id="health-status">Backend Connected</span>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Ingest Document File</div>
+        <div class="upload-box" onclick="document.getElementById('file-input').click()">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📄</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            Click to upload <strong>.txt</strong> or <strong>.md</strong>
+          </div>
+          <input type="file" id="file-input" accept=".txt,.md" onchange="uploadFile(event)">
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Or Paste Direct Text</div>
+        <textarea id="text-input" class="text-area-ingest" placeholder="Paste document content here..."></textarea>
+        <button class="btn" style="margin-top: 0.5rem;" onclick="ingestText()">
+          Ingest Text
+        </button>
+      </div>
+
+      <div class="store-stats">
+        <span>Chunks in Vector Store:</span>
+        <strong id="chunk-count" style="color: var(--accent-blue);">0</strong>
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-area">
+      <div class="messages-container" id="messages">
+        <div class="message assistant">
+          <div class="bubble">
+            Hello! I am <strong>DocuBot</strong>. Ingest your documents on the left panel, and ask me any question grounded in their content!
+          </div>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <input 
+          type="text" 
+          id="user-input" 
+          class="chat-input" 
+          placeholder="Ask a question about your ingested documents..."
+          onkeydown="if(event.key === 'Enter') sendMessage()"
+        >
+        <button class="btn send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          document.getElementById('health-status').innerText = 'Backend Connected';
+        }
+      } catch (e) {
+        document.getElementById('health-status').innerText = 'Server Offline';
+      }
+    }
+
+    async function uploadFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/ingest/file', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('chunk-count').innerText = data.total_chunks_in_store;
+          alert(`Successfully ingested "${file.name}"! Chunks added: ${data.chunks_added}`);
+        } else {
+          alert('Error: ' + (data.detail || 'Ingest failed'));
+        }
+      } catch (err) {
+        alert('Upload failed: ' + err.message);
+      }
+    }
+
+    async function ingestText() {
+      const text = document.getElementById('text-input').value.trim();
+      if (!text) return alert('Please enter text to ingest.');
+
+      try {
+        const res = await fetch('/ingest/text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('chunk-count').innerText = data.total_chunks_in_store;
+          document.getElementById('text-input').value = '';
+          alert(`Text ingested! Chunks added: ${data.chunks_added}`);
+        } else {
+          alert('Error: ' + (data.detail || 'Ingest failed'));
+        }
+      } catch (err) {
+        alert('Ingest failed: ' + err.message);
+      }
+    }
+
+    async function sendMessage() {
+      const inputEl = document.getElementById('user-input');
+      const question = inputEl.value.trim();
+      if (!question) return;
+
+      appendMessage('user', question);
+      inputEl.value = '';
+
+      const loadingMsgEl = appendMessage('assistant', 'Thinking...');
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: question })
+        });
+        const data = await res.json();
+
+        loadingMsgEl.remove();
+
+        if (res.ok) {
+          appendAssistantResponse(data.answer, data.sources);
+        } else {
+          appendMessage('assistant', 'Error: ' + (data.detail || 'Failed to generate response'));
+        }
+      } catch (err) {
+        loadingMsgEl.remove();
+        appendMessage('assistant', 'Error connecting to backend: ' + err.message);
+      }
+    }
+
+    function appendMessage(role, text) {
+      const container = document.getElementById('messages');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${role}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.innerText = text;
+
+      msgDiv.appendChild(bubble);
+      container.appendChild(msgDiv);
+      container.scrollTop = container.scrollHeight;
+      return msgDiv;
+    }
+
+    function appendAssistantResponse(answer, sources) {
+      const container = document.getElementById('messages');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message assistant';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.innerHTML = answer.replace(/\n/g, '<br>');
+
+      if (sources && sources.length > 0) {
+        const accordion = document.createElement('div');
+        accordion.className = 'sources-accordion';
+
+        const header = document.createElement('div');
+        header.className = 'sources-header';
+        header.innerText = `📌 Cited Sources (${sources.length})`;
+
+        const content = document.createElement('div');
+        content.className = 'sources-content';
+
+        sources.forEach(src => {
+          const item = document.createElement('div');
+          item.className = 'source-item';
+          item.innerHTML = `<span>${src.doc_id}</span><span style="opacity: 0.7;">Score: ${src.score.toFixed(3)}</span>`;
+          content.appendChild(item);
+        });
+
+        accordion.appendChild(header);
+        accordion.appendChild(content);
+        msgDiv.appendChild(bubble);
+        msgDiv.appendChild(accordion);
+      } else {
+        msgDiv.appendChild(bubble);
+      }
+
+      container.appendChild(msgDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    checkHealth();
+  </script>
+</body>
+</html>
