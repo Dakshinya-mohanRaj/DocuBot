@@ -510,12 +510,19 @@
 
       try {
         const res = await fetch('/ingest/file', { method: 'POST', body: formData });
-        const data = await res.json();
+        const body = await res.text();
+        let data = {};
+        if (body) {
+          try { data = JSON.parse(body); } catch (e) { data = {}; }
+        }
         if (res.ok) {
           addDocToList(file.name);
           showToast(`Successfully ingested "${file.name}"!`);
         } else {
-          alert('Upload failed: ' + (data.detail || 'Error uploading file'));
+          const detail = (typeof data.detail === 'string' && data.detail)
+            ? data.detail
+            : (body || res.status + ' ' + res.statusText || 'Upload failed');
+          alert('Upload failed: ' + detail);
         }
       } catch (e) {
         alert('Error: ' + e.message);

@@ -106,14 +106,19 @@ def parse_file_content(filename: str, raw: bytes) -> str:
 
 @router.post("/ingest/file")
 async def ingest_file(file: UploadFile = File(...)):
-    raw = await file.read()
-    text = parse_file_content(file.filename, raw)
+    try:
+        raw = await file.read()
+        text = parse_file_content(file.filename, raw)
 
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Uploaded file contained no extractable text.")
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Uploaded file contained no extractable text.")
 
-    doc_id = file.filename
-    chunks = chunk_text(text)
-    added = add_chunks(doc_id, chunks)
+        doc_id = file.filename
+        chunks = chunk_text(text)
+        added = add_chunks(doc_id, chunks)
 
-    return {"doc_id": doc_id, "chunks_added": added, "total_chunks_in_store": collection_count()}
+        return {"doc_id": doc_id, "chunks_added": added, "total_chunks_in_store": collection_count()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to ingest file: {type(e).__name__}: {str(e)}")
