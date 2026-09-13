@@ -20,10 +20,10 @@ def get_client() -> Groq:
 
 
 CANDIDATE_MODELS = [
-    "llama-3.3-70b-versatile",
+    "qwen/qwen3.6-27b",
     "llama-3.1-8b-instant",
     "mixtral-8x7b-32768",
-    "llama-3.3-70b-versatile",
+    "qwen/qwen3.6-27b",
 ]
 
 
