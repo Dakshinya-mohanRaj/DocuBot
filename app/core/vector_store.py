@@ -13,6 +13,10 @@ _collection = _client.get_or_create_collection(
     embedding_function=_embedding_fn,
 )
 
+# Warm the embedding model at startup so the first ingest/chat request
+# never triggers a slow model load (which can time out the Render proxy).
+_embedding_fn(["docubot-warmup"])
+
 
 def add_chunks(doc_id: str, chunks: list[str]) -> int:
     ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
