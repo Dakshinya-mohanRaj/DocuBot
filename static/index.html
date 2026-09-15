@@ -149,6 +149,23 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .doc-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      text-align: center;
+      padding: 1.5rem 1rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+    }
+    .doc-empty-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      opacity: 0.75;
+    }
 
     /* Paste Text Box */
     .paste-box {
@@ -332,17 +349,6 @@
       border-color: var(--accent-1);
       box-shadow: 0 0 12px rgba(37, 99, 235, 0.3);
     }
-    .attach-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 1.25rem;
-      cursor: pointer;
-      padding: 0.4rem;
-      border-radius: 6px;
-      transition: color 0.2s;
-    }
-    .attach-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
 
     .chat-input {
       flex: 1;
@@ -402,27 +408,27 @@
       <span>DocuBot</span>
     </div>
 
-    <!-- Upload Button -->
-    <button class="upload-btn-big" onclick="document.getElementById('file-input').click()">
-      <span>📤 Upload Document</span>
-    </button>
-    <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md" onchange="handleFileUpload(event)">
+    <!-- Single unified "Add a Document" section -->
+    <div class="add-docs-card">
+      <div class="add-docs-title">📥 Add a Document</div>
+
+      <button class="upload-btn-big" onclick="document.getElementById('file-input').click()">
+        <span>📤 Upload File</span>
+      </button>
+      <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md" onchange="handleFileUpload(event)">
+
+      <div class="add-docs-divider"><span>or paste text</span></div>
+
+      <textarea id="paste-text" class="paste-textarea" placeholder="Paste plain text here to ingest it too..."></textarea>
+      <button class="btn-secondary" onclick="handleTextIngest()">✚ Ingest Text</button>
+    </div>
 
     <div class="section-label">Active Documents</div>
     <div class="doc-list" id="doc-list">
-      <div class="doc-item">
-        <div class="doc-item-name">
-          <span>📄</span>
-          <span>about_docubot.md</span>
-        </div>
-        <span style="color: var(--success); font-size: 0.75rem;">Ingested</span>
+      <div class="doc-empty" id="doc-empty">
+        <span>No documents yet</span>
+        <span class="doc-empty-sub">Upload a file or paste text above to get started.</span>
       </div>
-    </div>
-
-    <div class="section-label">Or Paste Plain Text</div>
-    <div class="paste-box">
-      <textarea id="paste-text" class="paste-textarea" placeholder="Paste custom text here..."></textarea>
-      <button class="btn-secondary" onclick="handleTextIngest()">Save & Ingest Text</button>
     </div>
   </div>
 
@@ -456,18 +462,17 @@
         <div class="empty-icon">📚</div>
         <div class="empty-title">Welcome to DocuBot</div>
         <div class="empty-desc">
-          Upload any <strong>.pdf</strong>, <strong>.docx</strong>, <strong>.xlsx</strong>, <strong>.csv</strong>, <strong>.txt</strong>, or <strong>.md</strong> document, then ask questions grounded in your content!
+          Ask questions grounded in your document content!
         </div>
-        <button class="upload-btn-big" style="margin: 0 auto;" onclick="document.getElementById('file-input').click()">
-          📤 Upload Your First Document
-        </button>
+        <div class="empty-hint">
+          To get started, use the <strong>Add a Document</strong> card in the sidebar — upload a file or paste text.
+        </div>
       </div>
     </div>
 
     <!-- Input Bar -->
     <div class="input-container">
       <div class="input-wrapper">
-        <button class="attach-btn" title="Upload Document" onclick="document.getElementById('file-input').click()">📎</button>
         <input 
           type="text" 
           id="chat-input" 
@@ -554,6 +559,8 @@
 
     function addDocToList(docName) {
       const docList = document.getElementById('doc-list');
+      const emptyPlaceholder = document.getElementById('doc-empty');
+      if (emptyPlaceholder) emptyPlaceholder.remove();
       const item = document.createElement('div');
       item.className = 'doc-item';
       item.innerHTML = `
