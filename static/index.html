@@ -448,9 +448,9 @@
           </select>
         </div>
         
-        <div class="status-badge">
-          <div class="status-dot"></div>
-          <span>Backend Ready</span>
+        <div class="status-badge" id="status-badge">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-label">Warming up backend…</span>
         </div>
       </div>
     </div>
@@ -499,6 +499,52 @@
     document.body.setAttribute('data-theme', savedTheme);
     document.getElementById('theme-select').value = savedTheme;
 
+    /* ---------- Backend readiness (Render cold start handling) ---------- */
+    const statusBadge = document.getElementById('status-badge');
+    const statusDot = document.getElementById('status-dot');
+    const statusLabel = document.getElementById('status-label');
+    const uploadBtn = document.querySelector('.upload-btn-big');
+    const uploadBtn2 = document.getElementById('upload-btn-hero');
+    const thumbBtn = document.querySelector('.thumb-btn');
+    const sendBtn = document.querySelector('.send-icon-btn');
+    const chatInput = document.getElementById('chat-input');
+    const pasteBtn = document.querySelector('.paste-ingest-btn');
+    const pasteText = document.getElementById('paste-text');
+
+    function setBackendReady(ready) {
+      statusBadge.classList.toggle('ready', ready);
+      statusBadge.classList.toggle('starting', !ready);
+      statusDot.classList.toggle('ready', ready);
+      statusDot.classList.toggle('starting', !ready);
+      statusLabel.textContent = ready
+        ? 'Backend Ready - you can upload now'
+        : 'Backend warming up...';
+      [uploadBtn, uploadBtn2, thumbBtn, sendBtn, pasteBtn].forEach(b => {
+        if (b) b.disabled = !ready;
+      });
+      [chatInput, pasteText].forEach(el => {
+        if (el) el.disabled = !ready;
+      });
+    }
+
+    async function pollBackendHealth() {
+      setBackendReady(false);
+      const maxTries = 600; // up to ~10min
+      for (let i = 0; i < maxTries; i++) {
+        try {
+          const res = await fetch('/health');
+          if (res.ok) {
+            setBackendReady(true);
+            showToast('Backend is ready - you can upload documents now!');
+            return;
+          }
+        } catch (e) { /* backend not up yet */ }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      statusLabel.textContent = 'Backend unavailable. Refresh the page to retry.';
+    }
+    pollBackendHealth();
+
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.innerText = msg;
@@ -531,6 +577,9 @@
         }
       } catch (e) {
         alert('Error: ' + e.message);
+      } finally {
+        // Reset so re-selecting the SAME file still fires onchange next time
+        event.target.value = '';
       }
     }
 
