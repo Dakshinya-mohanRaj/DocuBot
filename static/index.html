@@ -716,11 +716,17 @@
     }
     pollBackendHealth();
 
-    function showToast(msg) {
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
       const toast = document.getElementById('toast');
       toast.innerText = msg;
+      toast.style.background = isError ? '#ef4444' : '';
       toast.style.display = 'block';
-      setTimeout(() => { toast.style.display = 'none'; }, 3500);
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.style.display = 'none';
+        toast.style.background = '';
+      }, isError ? 4000 : 3500);
     }
 
     function setPrompt(text) {
@@ -735,7 +741,7 @@
       // Client-side 10 MB size check
       const MAX_MB = 10;
       if (file.size > MAX_MB * 1024 * 1024) {
-        showToastError(`File too large! Max allowed size is ${MAX_MB} MB. Your file is ${(file.size / (1024*1024)).toFixed(1)} MB.`);
+        showToast(`File too large! Max allowed size is ${MAX_MB} MB. Your file is ${(file.size / (1024*1024)).toFixed(1)} MB.`, true);
         event.target.value = '';
         return;
       }
@@ -762,12 +768,12 @@
         } else {
           loadingItem.remove();
           restoreEmptyIfNeeded();
-          showToastError('Upload failed: ' + (data.detail || body));
+          showToast('Upload failed: ' + (data.detail || body), true);
         }
       } catch (e) {
         loadingItem.remove();
         restoreEmptyIfNeeded();
-        showToastError('Error: ' + e.message);
+        showToast('Error: ' + e.message, true);
       } finally {
         event.target.value = '';
         if (uploadBtn) uploadBtn.disabled = false;
@@ -800,17 +806,6 @@
       if (docList.children.length === 0) {
         docList.innerHTML = `<div class="doc-empty" id="doc-empty">No documents uploaded.<br>Add a file or paste text to chat.</div>`;
       }
-    }
-
-    function showToastError(msg) {
-      const toast = document.getElementById('toast');
-      toast.innerText = msg;
-      toast.style.background = '#ef4444';
-      toast.style.display = 'block';
-      setTimeout(() => {
-        toast.style.display = 'none';
-        toast.style.background = '';
-      }, 4000);
     }
 
     async function handleTextIngest() {
