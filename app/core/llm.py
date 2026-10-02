@@ -1,6 +1,26 @@
 import os
 import re
+from functools import lru_cache
+
 from groq import Groq
+
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
+
+MAX_TOKENS = 1024
+TEMPERATURE = 0.1
+
+# Substrings that mark models unusable for chat: guard/classification models
+# never answer, whisper is speech-to-text only, and the canopylabs orpheus
+# models are gated behind org-level terms acceptance and fail with
+# `model_terms_required` on a default account.
+EXCLUDED_MODEL_MARKERS = (
+    "whisper",
+    "guard",
+    "safeguard",
+    "embed",
+    "classification",
+    "orpheus",
+)
 
 SYSTEM_PROMPT = """You are DocuBot, a helpful assistant that answers questions strictly \
 based on the provided document context. Rules:
@@ -11,7 +31,6 @@ based on the provided document context. Rules:
 """
 
 
-
 def get_client() -> Groq:
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
@@ -19,28 +38,41 @@ def get_client() -> Groq:
     return Groq(api_key=api_key)
 
 
-CANDIDATE_MODELS = [
-    "qwen/qwen3.6-27b",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-    "qwen/qwen3.6-27b",
-]
+@lru_cache(maxsize=1)
+def resolve_model() -> str:
+    """Return the single pinned chat model, validated once per process.
 
+    Previously this iterated the live model list and picked whichever model
+    came first out of a Python ``set``. Set ordering is randomized per
+    process, so each container silently picked a different model and chat
+    worked or failed depending on deployment luck. The model is now pinned
+    explicitly and validated once, so every instance behaves identically.
+    """
+    model = os.environ.get("GROQ_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
-def get_best_model(client: Groq) -> str:
     try:
-        models_response = client.models.list()
-        active_ids = {m.id for m in models_response.data}
-        for cand in CANDIDATE_MODELS:
-            if cand in active_ids:
-                return cand
-        for m_id in active_ids:
-            lower_m = m_id.lower()
-            if not any(bad in lower_m for bad in ["whisper", "guard", "safeguard", "embed", "classification", "deepseek-r1"]):
-                return m_id
-    except Exception:
-        pass
-    return "llama-3.1-8b-instant"
+        active = {m.id for m in get_client().models.list().data}
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not verify Groq model availability: {exc}"
+        ) from exc
+
+    if model not in active:
+        usable = sorted(
+            m
+            for m in active
+            if not any(bad in m.lower() for bad in EXCLUDED_MODEL_MARKERS)
+        )
+        raise RuntimeError(
+            f"Configured model {model!r} is not available to this Groq account. "
+            f"Set GROQ_MODEL to one of: {', '.join(usable) or '(none)'}"
+        )
+
+    return model
+
+
+def _strip_thinking(content: str) -> str:
+    return re.sub(r"<think>.*?(?:</think>|$)", "", content, flags=re.DOTALL).strip()
 
 
 def generate_answer(question: str, context_chunks: list[dict], history: list[dict]) -> str:
@@ -57,26 +89,21 @@ def generate_answer(question: str, context_chunks: list[dict], history: list[dic
         }
     )
 
-    client = get_client()
-    selected_model = get_best_model(client)
+    model_name = resolve_model()
+    response = get_client().chat.completions.create(
+        model=model_name,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        messages=messages,
+    )
 
-    # Try selected model first, with fallbacks across CANDIDATE_MODELS
-    models_to_try = [selected_model] + [m for m in CANDIDATE_MODELS if m != selected_model]
-    last_exception = None
+    content = response.choices[0].message.content or ""
+    answer = _strip_thinking(content)
 
-    for model_name in models_to_try:
-        try:
-            response = client.chat.completions.create(
-                model=model_name,
-                max_tokens=1024,
-                messages=messages,
-            )
-            content = response.choices[0].message.content or ""
-            content = re.sub(r"<think>.*?(?:</think>|$)", "", content, flags=re.DOTALL).strip()
-            return content
+    if not answer:
+        raise RuntimeError(
+            f"Model {model_name!r} returned an empty answer "
+            f"(raw content: {content[:200]!r})"
+        )
 
-        except Exception as e:
-            last_exception = e
-            continue
-
-    raise RuntimeError(f"Groq API Error: {str(last_exception)}") from last_exception
+    return answer

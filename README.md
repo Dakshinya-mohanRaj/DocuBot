@@ -6,12 +6,17 @@ conversation memory per session.
 
 ## 🚀 Live Demo
 
-> **Try it now: [https://docubot-7oun.onrender.com](https://docubot-5fy3.onrender.com)
+> **Try it now: [https://docubot-5fy3.onrender.com](https://docubot-5fy3.onrender.com)
 
 Hosted on **Render** with a modern single-page web UI (upload → chat in seconds). API docs are live at
-[https://docubot-7oun.onrender.com/docs](https://docubot-5fy3.onrender.com/docs).
+[https://docubot-5fy3.onrender.com/docs](https://docubot-5fy3.onrender.com/docs).
 
 > ⚠️ The free-tier instance sleeps after ~15 min of inactivity — the first request after waking can take ~30–60 s.
+
+> ⚠️ **Uploaded documents do not survive a restart.** Render's free tier uses an ephemeral disk and
+> `render.yaml` declares no persistent volume, so the ChromaDB store at `data/chroma` is wiped on every
+> deploy, spin-down or crash. Re-upload your documents after each restart. Adding a `disk:` block to
+> `render.yaml` (paid plan) makes them persist.
 
 ## ✨ Key Features
 
@@ -29,7 +34,7 @@ Hosted on **Render** with a modern single-page web UI (upload → chat in second
 | Backend API    | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn                |
 | Vector store   | [ChromaDB](https://www.trychroma.com/)                            |
 | Embeddings     | `sentence-transformers` (`all-MiniLM-L6-v2`, local, CPU)          |
-| LLM (inference)| [Groq](https://groq.com) API (`qwen/qwen3.6-27b`)                 |
+| LLM (inference)| [Groq](https://groq.com) API (`qwen/qwen3.8-27b`, override with `GROQ_MODEL`) |
 | Document parse | `pypdf`, `python-docx`, `openpyxl`                                |
 | Frontend       | Vanilla HTML/CSS/JS (single page)                                 |
 | Deploy         | [Render](https://render.com) (Docker, Python 3.12)                |
