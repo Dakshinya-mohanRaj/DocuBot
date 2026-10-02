@@ -1,127 +1,175 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DocuBot — RAG Document Chat</title>
+  <title>DocuBot — AI Document Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    /* Double Colour (Dual-Tone) Themes */
-    :root[data-theme="dual-blue-purple"] {
-      --sidebar-bg: #090d16;
-      --chat-bg: #111827;
-      --card-bg: #1f2937;
-      --border: rgba(99, 102, 241, 0.2);
-      --accent-1: #2563eb;
-      --accent-2: #9333ea;
-      --accent-grad: linear-gradient(135deg, #2563eb 0%, #9333ea 100%);
-      --text: #f9fafb;
-      --text-muted: #9ca3af;
-      --success: #10b981;
-    }
-
-    :root[data-theme="dual-emerald-cyan"] {
-      --sidebar-bg: #041410;
-      --chat-bg: #0b1f1b;
-      --card-bg: #13332c;
-      --border: rgba(16, 185, 129, 0.2);
-      --accent-1: #059669;
-      --accent-2: #06b6d4;
-      --accent-grad: linear-gradient(135deg, #059669 0%, #06b6d4 100%);
-      --text: #ecfdf5;
-      --text-muted: #6ee7b7;
-      --success: #34d399;
-    }
-
-    :root[data-theme="dual-crimson-amber"] {
-      --sidebar-bg: #18070b;
-      --chat-bg: #240c12;
-      --card-bg: #3b141e;
-      --border: rgba(225, 29, 72, 0.2);
-      --accent-1: #e11d48;
-      --accent-2: #f59e0b;
-      --accent-grad: linear-gradient(135deg, #e11d48 0%, #f59e0b 100%);
-      --text: #fff1f2;
-      --text-muted: #fda4af;
-      --success: #fbbf24;
+    :root {
+      --bg-dark: #090a0f;
+      --sidebar-bg: #11131b;
+      --card-bg: #1a1d28;
+      --card-hover: #222636;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #ececf1;
+      --text-muted: #9b9cbf;
+      --accent-green: #10a37f;
+      --accent-green-hover: #1a7f64;
+      --user-msg-bg: #212534;
+      --bot-msg-bg: #161822;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--chat-bg);
-      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
       height: 100vh;
       display: flex;
       overflow: hidden;
-      transition: all 0.3s ease;
     }
 
-    /* Left Sidebar - Colour 1 */
+    /* SVG Icon Helpers */
+    .icon {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: inline-block;
+    }
+
+    /* Sidebar - ChatGPT style */
     .sidebar {
-      width: 320px;
+      width: 280px;
       background: var(--sidebar-bg);
-      border-right: 2px solid var(--border);
+      border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      padding: 1.25rem;
-      gap: 1.25rem;
-      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+      padding: 0.85rem;
+      gap: 1rem;
+      flex-shrink: 0;
       transition: all 0.3s ease;
+      z-index: 10;
+    }
+
+    .brand-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0.6rem;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.65rem;
       font-weight: 700;
-      font-size: 1.15rem;
+      font-size: 1.1rem;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
     }
-    .brand-logo {
-      width: 38px;
-      height: 38px;
-      background: var(--accent-grad);
-      border-radius: 10px;
+
+    .brand-avatar {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-green);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.2rem;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+      color: white;
     }
 
-    /* Big Upload Button */
-    .upload-btn-big {
-      background: var(--accent-grad);
+    /* New Chat / Add Document Button */
+    .btn-new-doc {
+      background: var(--accent-green);
       color: white;
       border: none;
-      border-radius: 10px;
-      padding: 0.9rem;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.6rem;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
       transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(16, 163, 127, 0.25);
     }
-    .upload-btn-big:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
-    }
-    #file-input { display: none; }
 
-    /* Active Documents List */
-    .section-label {
+    .btn-new-doc:hover {
+      background: var(--accent-green-hover);
+      transform: translateY(-1px);
+    }
+    .btn-new-doc:active { transform: translateY(0); }
+
+    /* Paste Accordion Card */
+    .paste-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .paste-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .paste-textarea {
+      width: 100%;
+      height: 70px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.83rem;
+      padding: 0.5rem;
+      resize: none;
+    }
+    .paste-textarea:focus {
+      outline: none;
+      border-color: var(--accent-green);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+
+    /* Active Documents Section */
+    .doc-section-title {
       font-size: 0.75rem;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--text-muted);
-      font-weight: 600;
-      margin-top: 0.5rem;
+      padding: 0 0.3rem;
     }
 
     .doc-list {
@@ -129,358 +177,431 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
+
     .doc-item {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      padding: 0.75rem 0.9rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      padding: 0.65rem 0.8rem;
       border-radius: 8px;
-      font-size: 0.85rem;
+      font-size: 0.83rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      color: var(--text-main);
     }
+
     .doc-item-name {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.55rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .doc-empty {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.3rem;
       text-align: center;
-      padding: 1.5rem 1rem;
+      padding: 1.5rem 0.8rem;
       color: var(--text-muted);
-      font-size: 0.85rem;
-      border: 1px dashed var(--border);
+      font-size: 0.82rem;
+      border: 1px dashed var(--border-color);
       border-radius: 8px;
     }
-    .doc-empty-sub {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      opacity: 0.75;
-    }
 
-    /* Paste Text Box */
-    .paste-box {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    .paste-textarea {
-      width: 100%;
-      height: 75px;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 0.85rem;
-      resize: none;
-    }
-    .paste-textarea:focus { outline: none; }
-    .btn-secondary {
-      background: var(--card-bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 0.53rem;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .btn-secondary:hover { filter: brightness(1.25); }
-
-    /* Main Chat Canvas - Colour 2 */
+    /* Main Chat Layout */
     .chat-container {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: var(--chat-bg);
-      transition: all 0.3s ease;
+      background: var(--bg-dark);
+      position: relative;
     }
 
-    /* Header */
-    .chat-header {
-      padding: 1rem 1.75rem;
-      border-bottom: 2px solid var(--border);
+    /* Top Navbar */
+    .top-navbar {
+      height: 55px;
+      padding: 0 1.5rem;
+      border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
       background: var(--sidebar-bg);
     }
-    
-    /* Theme Selector Dropdown */
-    .theme-selector {
+
+    .model-selector {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-    .theme-select {
-      background: var(--card-bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 0.4rem 0.75rem;
-      font-size: 0.85rem;
-      font-family: inherit;
-      cursor: pointer;
       font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-main);
+      cursor: pointer;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      transition: background 0.2s;
     }
-    .theme-select:focus { outline: none; border-color: var(--accent-1); }
+    .model-selector:hover { background: var(--card-bg); }
 
     .status-badge {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       font-size: 0.8rem;
-      color: var(--success);
-      background: rgba(16, 185, 129, 0.12);
-      padding: 0.35rem 0.8rem;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.1);
+      padding: 0.3rem 0.75rem;
       border-radius: 20px;
       border: 1px solid rgba(16, 185, 129, 0.25);
     }
+
     .status-dot {
       width: 7px;
       height: 7px;
-      background: var(--success);
+      background: #34d399;
       border-radius: 50%;
-      box-shadow: 0 0 8px var(--success);
+      box-shadow: 0 0 8px #34d399;
+    }
+    .status-dot.starting {
+      background: #f59e0b;
+      box-shadow: 0 0 8px #f59e0b;
     }
 
-    /* Message List */
-    .messages-list {
+    /* Chat Messages Stream */
+    .messages-container {
       flex: 1;
-      padding: 2rem;
       overflow-y: auto;
+      padding: 1.5rem 0;
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      align-items: center;
     }
 
-    /* Hero Empty State */
-    .empty-state {
+    .messages-wrapper {
+      width: 100%;
+      max-width: 800px;
+      padding: 0 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    /* Empty ChatGPT Hero View */
+    .hero-container {
       margin: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       text-align: center;
-      max-width: 480px;
-      padding: 2rem;
+      max-width: 600px;
+      padding: 2rem 1.5rem;
     }
-    .empty-icon {
-      font-size: 3.5rem;
-      margin-bottom: 1rem;
+
+    .hero-avatar {
+      width: 50px;
+      height: 50px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.2rem;
+      box-shadow: 0 0 20px rgba(16, 163, 127, 0.4);
     }
-    .empty-title {
-      font-size: 1.5rem;
+
+    .hero-title {
+      font-size: 1.6rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.6rem;
+      letter-spacing: -0.5px;
     }
-    .empty-desc {
+
+    .hero-subtitle {
       color: var(--text-muted);
       font-size: 0.95rem;
-      line-height: 1.55;
-      margin-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      line-height: 1.5;
     }
 
-    /* Chat Bubbles - High Contrast Dual Colors */
+    .prompt-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 0.75rem;
+      width: 100%;
+    }
+
+    .prompt-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .prompt-card:hover {
+      background: var(--card-hover);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .prompt-card-title {
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+    .prompt-card-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Message Bubbles - ChatGPT Style */
     .msg-row {
       display: flex;
-      flex-direction: column;
-      max-width: 75%;
+      gap: 1rem;
+      width: 100%;
     }
-    .msg-row.user { align-self: flex-end; }
-    .msg-row.bot { align-self: flex-start; }
+
+    .msg-row.user {
+      justify-content: flex-end;
+    }
+
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .msg-avatar.bot {
+      background: var(--accent-green);
+      color: white;
+    }
 
     .msg-bubble {
-      padding: 0.95rem 1.25rem;
-      border-radius: 14px;
+      padding: 0.85rem 1.1rem;
+      border-radius: 18px;
       font-size: 0.95rem;
       line-height: 1.6;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+      max-width: 82%;
+      word-break: break-word;
     }
+
     .msg-row.user .msg-bubble {
-      background: var(--accent-grad);
-      color: white;
-      border-bottom-right-radius: 2px;
+      background: var(--user-msg-bg);
+      color: var(--text-main);
+      border-bottom-right-radius: 4px;
     }
+
+    .msg-row.bot {
+      align-items: flex-start;
+    }
+
     .msg-row.bot .msg-bubble {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-bottom-left-radius: 2px;
+      background: transparent;
+      color: var(--text-main);
+      padding-left: 0;
     }
 
     /* Citations */
     .citation-box {
-      margin-top: 0.5rem;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.78rem;
+      margin-top: 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
-    }
-
-    /* Input Bar */
-    .input-container {
-      padding: 1.25rem 2rem;
-      border-top: 2px solid var(--border);
-      background: var(--sidebar-bg);
-    }
-    .input-wrapper {
-      background: var(--chat-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
       display: flex;
       align-items: center;
-      padding: 0.5rem 0.75rem;
       gap: 0.5rem;
     }
-    .input-wrapper:focus-within {
-      border-color: var(--accent-1);
-      box-shadow: 0 0 12px rgba(37, 99, 235, 0.3);
+
+    /* Bottom ChatGPT Floating Input Bar */
+    .input-area {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      justify-content: center;
+      background: linear-gradient(180deg, transparent 0%, var(--bg-dark) 40%);
+    }
+
+    .input-box {
+      width: 100%;
+      max-width: 800px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: var(--shadow-lg);
+      transition: border-color 0.2s;
+    }
+
+    .input-box:focus-within {
+      border-color: rgba(255, 255, 255, 0.25);
     }
 
     .chat-input {
       flex: 1;
       background: transparent;
       border: none;
-      color: var(--text);
+      color: var(--text-main);
       font-size: 0.95rem;
       font-family: inherit;
-      padding: 0.4rem;
+      outline: none;
     }
-    .chat-input:focus { outline: none; }
 
-    .send-icon-btn {
-      background: var(--accent-grad);
+    .send-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--accent-green);
       color: white;
       border: none;
-      width: 38px;
-      height: 38px;
-      border-radius: 8px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: bold;
-      font-size: 1.1rem;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: opacity 0.2s;
     }
-    .send-icon-btn:hover { transform: scale(1.04); }
+    .send-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .send-btn:hover:not(:disabled) {
+      background: var(--accent-green-hover);
+    }
 
-    /* Notification Toast */
+    .footer-note {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    /* Toast Notification */
     .toast {
       position: fixed;
       bottom: 2rem;
       right: 2rem;
-      background: var(--accent-grad);
+      background: var(--accent-green);
       color: white;
       padding: 0.75rem 1.25rem;
       border-radius: 8px;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 500;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+      box-shadow: var(--shadow-lg);
       display: none;
-      animation: slideUp 0.3s ease;
+      z-index: 100;
+      animation: fadeIn 0.3s ease;
     }
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
-<body data-theme="dual-blue-purple">
+<body>
 
-  <!-- Left Sidebar (Colour 1) -->
+  <!-- Left Sidebar -->
   <div class="sidebar">
-    <div class="brand">
-      <div class="brand-logo">🤖</div>
-      <span>DocuBot</span>
+    <div class="brand-header">
+      <div class="brand">
+        <div class="brand-avatar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg>
+        </div>
+        <span>DocuBot</span>
+      </div>
     </div>
 
-    <!-- Single unified "Add a Document" section -->
-    <div class="add-docs-card">
-      <div class="add-docs-title">📥 Add a Document</div>
+    <!-- Upload Document Button -->
+    <button class="btn-new-doc" onclick="document.getElementById('file-input').click()">
+      <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>Upload Document</span>
+    </button>
+    <input type="file" id="file-input" style="display: none;" accept=".pdf,.docx,.xlsx,.csv,.txt,.md" onchange="handleFileUpload(event)">
 
-      <button class="upload-btn-big" onclick="document.getElementById('file-input').click()">
-        <span>📤 Upload File</span>
-      </button>
-      <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md" onchange="handleFileUpload(event)">
-
-      <div class="add-docs-divider"><span>or paste text</span></div>
-
-      <textarea id="paste-text" class="paste-textarea" placeholder="Paste plain text here to ingest it too..."></textarea>
-      <button class="btn-secondary" onclick="handleTextIngest()">✚ Ingest Text</button>
+    <!-- Paste Plain Text Accordion -->
+    <div class="paste-card">
+      <div class="paste-title">Paste Raw Text</div>
+      <textarea id="paste-text" class="paste-textarea" placeholder="Paste article or notes context here..."></textarea>
+      <button class="btn-secondary" onclick="handleTextIngest()">+ Ingest Text</button>
     </div>
 
-    <div class="section-label">Active Documents</div>
+    <div class="doc-section-title">Knowledge Base</div>
     <div class="doc-list" id="doc-list">
       <div class="doc-empty" id="doc-empty">
-        <span>No documents yet</span>
-        <span class="doc-empty-sub">Upload a file or paste text above to get started.</span>
+        No documents uploaded.<br>Add a file or paste text to chat.
       </div>
     </div>
   </div>
 
-  <!-- Main Chat Canvas (Colour 2) -->
+  <!-- Main Chat View -->
   <div class="chat-container">
-    <div class="chat-header">
-      <div style="font-weight: 600;">Document Grounded Chatbot</div>
-      
-      <!-- Theme Switcher & Status -->
-      <div style="display: flex; align-items: center; gap: 1rem;">
-        <div class="theme-selector">
-          <span>Double Colour Theme:</span>
-          <select id="theme-select" class="theme-select" onchange="changeTheme(this.value)">
-            <option value="dual-blue-purple">🎨 Blue & Neon Purple</option>
-            <option value="dual-emerald-cyan">💎 Emerald & Cyan</option>
-            <option value="dual-crimson-amber">🔥 Crimson & Amber Gold</option>
-          </select>
-        </div>
+    <!-- Navbar -->
+    <div class="top-navbar">
+      <div class="model-selector">
+        <span>DocuBot 4.0 (RAG)</span>
+        <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </div>
+
+      <div class="status-badge" id="status-badge">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-label">Warming up backend…</span>
+      </div>
+    </div>
+
+    <!-- Chat Stream -->
+    <div class="messages-container" id="messages-container">
+      <div class="messages-wrapper" id="messages-wrapper">
         
-        <div class="status-badge" id="status-badge">
-          <div class="status-dot" id="status-dot"></div>
-          <span id="status-label">Warming up backend…</span>
+        <!-- ChatGPT Hero State -->
+        <div class="hero-container" id="hero-state">
+          <div class="hero-avatar">
+            <svg class="icon" style="width:28px; height:28px;" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20z"/></svg>
+          </div>
+          <h1 class="hero-title">What can I answer today?</h1>
+          <p class="hero-subtitle">Upload your PDF, DOCX, or text files on the left sidebar to start asking questions grounded in your document data.</p>
+          
+          <div class="prompt-grid">
+            <div class="prompt-card" onclick="setPrompt('Summarize key points from my document')">
+              <div class="prompt-card-title">📝 Summarize insights</div>
+              <div class="prompt-card-desc">Get a high-level summary of your file</div>
+            </div>
+            <div class="prompt-card" onclick="setPrompt('Extract main conclusions and action items')">
+              <div class="prompt-card-title">🎯 Action items</div>
+              <div class="prompt-card-desc">Pull out important takeaways</div>
+            </div>
+          </div>
         </div>
+
       </div>
     </div>
 
-    <!-- Messages Container -->
-    <div class="messages-list" id="messages-list">
-      <!-- Empty Hero State -->
-      <div class="empty-state" id="empty-state">
-        <div class="empty-icon">📚</div>
-        <div class="empty-title">Welcome to DocuBot</div>
-        <div class="empty-desc">
-          Ask questions grounded in your document content!
+    <!-- Floating Bottom Input Area -->
+    <div class="input-area">
+      <div style="width: 100%; max-width: 800px;">
+        <div class="input-box">
+          <input 
+            type="text" 
+            id="chat-input" 
+            class="chat-input" 
+            placeholder="Message DocuBot..." 
+            onkeydown="if(event.key==='Enter') sendQuestion()"
+          >
+          <button class="send-btn" id="send-btn" onclick="sendQuestion()">
+            <svg class="icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
         </div>
-        <div class="empty-hint">
-          To get started, use the <strong>Add a Document</strong> card in the sidebar — upload a file or paste text.
-        </div>
-      </div>
-    </div>
-
-    <!-- Input Bar -->
-    <div class="input-container">
-      <div class="input-wrapper">
-        <input 
-          type="text" 
-          id="chat-input" 
-          class="chat-input" 
-          placeholder="Ask a question about your documents..." 
-          onkeydown="if(event.key==='Enter') sendQuestion()"
-        >
-        <button class="send-icon-btn" onclick="sendQuestion()">➔</button>
+        <div class="footer-note">DocuBot uses document-grounded vector search. Verify important information.</div>
       </div>
     </div>
   </div>
@@ -489,59 +610,34 @@
   <div class="toast" id="toast"></div>
 
   <script>
-    function changeTheme(themeName) {
-      document.body.setAttribute('data-theme', themeName);
-      localStorage.setItem('docubot_theme', themeName);
-    }
-
-    // Load saved theme
-    const savedTheme = localStorage.getItem('docubot_theme') || 'dual-blue-purple';
-    document.body.setAttribute('data-theme', savedTheme);
-    document.getElementById('theme-select').value = savedTheme;
-
-    /* ---------- Backend readiness (Render cold start handling) ---------- */
     const statusBadge = document.getElementById('status-badge');
     const statusDot = document.getElementById('status-dot');
     const statusLabel = document.getElementById('status-label');
-    const uploadBtn = document.querySelector('.upload-btn-big');
-    const uploadBtn2 = document.getElementById('upload-btn-hero');
-    const thumbBtn = document.querySelector('.thumb-btn');
-    const sendBtn = document.querySelector('.send-icon-btn');
+    const sendBtn = document.getElementById('send-btn');
     const chatInput = document.getElementById('chat-input');
-    const pasteBtn = document.querySelector('.paste-ingest-btn');
     const pasteText = document.getElementById('paste-text');
 
     function setBackendReady(ready) {
-      statusBadge.classList.toggle('ready', ready);
-      statusBadge.classList.toggle('starting', !ready);
-      statusDot.classList.toggle('ready', ready);
       statusDot.classList.toggle('starting', !ready);
-      statusLabel.textContent = ready
-        ? 'Backend Ready - you can upload now'
-        : 'Backend warming up...';
-      [uploadBtn, uploadBtn2, thumbBtn, sendBtn, pasteBtn].forEach(b => {
-        if (b) b.disabled = !ready;
-      });
-      [chatInput, pasteText].forEach(el => {
-        if (el) el.disabled = !ready;
-      });
+      statusLabel.textContent = ready ? 'Backend Ready' : 'Backend warming up…';
+      sendBtn.disabled = !ready;
+      chatInput.disabled = !ready;
     }
 
     async function pollBackendHealth() {
       setBackendReady(false);
-      const maxTries = 600; // up to ~10min
-      for (let i = 0; i < maxTries; i++) {
+      for (let i = 0; i < 600; i++) {
         try {
           const res = await fetch('/health');
           if (res.ok) {
             setBackendReady(true);
-            showToast('Backend is ready - you can upload documents now!');
+            showToast('Backend is ready!');
             return;
           }
-        } catch (e) { /* backend not up yet */ }
+        } catch (e) {}
         await new Promise(r => setTimeout(r, 1000));
       }
-      statusLabel.textContent = 'Backend unavailable. Refresh the page to retry.';
+      statusLabel.textContent = 'Backend offline';
     }
     pollBackendHealth();
 
@@ -550,6 +646,11 @@
       toast.innerText = msg;
       toast.style.display = 'block';
       setTimeout(() => { toast.style.display = 'none'; }, 3500);
+    }
+
+    function setPrompt(text) {
+      chatInput.value = text;
+      chatInput.focus();
     }
 
     async function handleFileUpload(event) {
@@ -563,28 +664,23 @@
         const res = await fetch('/ingest/file', { method: 'POST', body: formData });
         const body = await res.text();
         let data = {};
-        if (body) {
-          try { data = JSON.parse(body); } catch (e) { data = {}; }
-        }
+        if (body) { try { data = JSON.parse(body); } catch (e) {} }
+
         if (res.ok) {
           addDocToList(file.name);
-          showToast(`Successfully ingested "${file.name}"!`);
+          showToast(`Ingested "${file.name}"!`);
         } else {
-          const detail = (typeof data.detail === 'string' && data.detail)
-            ? data.detail
-            : (body || res.status + ' ' + res.statusText || 'Upload failed');
-          alert('Upload failed: ' + detail);
+          alert('Upload failed: ' + (data.detail || body));
         }
       } catch (e) {
         alert('Error: ' + e.message);
       } finally {
-        // Reset so re-selecting the SAME file still fires onchange next time
         event.target.value = '';
       }
     }
 
     async function handleTextIngest() {
-      const text = document.getElementById('paste-text').value.trim();
+      const text = pasteText.value.trim();
       if (!text) return alert('Please enter text first.');
 
       try {
@@ -595,7 +691,7 @@
         });
         const data = await res.json();
         if (res.ok) {
-          document.getElementById('paste-text').value = '';
+          pasteText.value = '';
           addDocToList('Pasted Snippet (' + data.doc_id + ')');
           showToast('Text ingested successfully!');
         } else {
@@ -610,30 +706,30 @@
       const docList = document.getElementById('doc-list');
       const emptyPlaceholder = document.getElementById('doc-empty');
       if (emptyPlaceholder) emptyPlaceholder.remove();
+
       const item = document.createElement('div');
       item.className = 'doc-item';
       item.innerHTML = `
         <div class="doc-item-name">
-          <span>📄</span>
+          <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
           <span>${docName}</span>
         </div>
-        <span style="color: var(--success); font-size: 0.75rem;">Ingested</span>
+        <span style="color: #34d399; font-size: 0.75rem;">Ready</span>
       `;
       docList.appendChild(item);
     }
 
     async function sendQuestion() {
-      const input = document.getElementById('chat-input');
-      const question = input.value.trim();
+      const question = chatInput.value.trim();
       if (!question) return;
 
-      const emptyState = document.getElementById('empty-state');
-      if (emptyState) emptyState.style.display = 'none';
+      const heroState = document.getElementById('hero-state');
+      if (heroState) heroState.style.display = 'none';
 
-      appendMessage('user', question);
-      input.value = '';
+      appendUserMessage(question);
+      chatInput.value = '';
 
-      const loadingDiv = appendMessage('bot', 'Searching document context...');
+      const loadingDiv = appendBotLoading();
 
       try {
         const res = await fetch('/chat', {
@@ -646,52 +742,69 @@
         loadingDiv.remove();
 
         if (res.ok) {
-          appendBotResponse(data.answer, data.sources);
+          appendBotMessage(data.answer, data.sources);
         } else {
-          appendMessage('bot', 'Error: ' + (data.detail || 'Could not generate answer'));
+          appendBotMessage('Error: ' + (data.detail || 'Could not generate answer'));
         }
       } catch (e) {
         loadingDiv.remove();
-        appendMessage('bot', 'Error connecting to backend server.');
+        appendBotMessage('Error connecting to backend server.');
       }
     }
 
-    function appendMessage(role, text) {
-      const list = document.getElementById('messages-list');
+    function appendUserMessage(text) {
+      const wrapper = document.getElementById('messages-wrapper');
       const row = document.createElement('div');
-      row.className = `msg-row ${role}`;
+      row.className = 'msg-row user';
+      row.innerHTML = `<div class="msg-bubble">${escapeHtml(text)}</div>`;
+      wrapper.appendChild(row);
+      scrollToBottom();
+    }
 
-      const bubble = document.createElement('div');
-      bubble.className = 'msg-bubble';
-      bubble.innerText = text;
-
-      row.appendChild(bubble);
-      list.appendChild(row);
-      list.scrollTop = list.scrollHeight;
+    function appendBotLoading() {
+      const wrapper = document.getElementById('messages-wrapper');
+      const row = document.createElement('div');
+      row.className = 'msg-row bot';
+      row.innerHTML = `
+        <div class="msg-avatar bot">🤖</div>
+        <div class="msg-bubble" style="color: var(--text-muted);">Thinking & searching document context...</div>
+      `;
+      wrapper.appendChild(row);
+      scrollToBottom();
       return row;
     }
 
-    function appendBotResponse(answer, sources) {
-      const list = document.getElementById('messages-list');
+    function appendBotMessage(answer, sources) {
+      const wrapper = document.getElementById('messages-wrapper');
       const row = document.createElement('div');
       row.className = 'msg-row bot';
 
-      const bubble = document.createElement('div');
-      bubble.className = 'msg-bubble';
-      bubble.innerHTML = answer.replace(/\n/g, '<br>');
-
-      row.appendChild(bubble);
-
+      let sourcesHtml = '';
       if (sources && sources.length > 0) {
-        const citation = document.createElement('div');
-        citation.className = 'citation-box';
         const docNames = [...new Set(sources.map(s => s.doc_id))].join(', ');
-        citation.innerHTML = `📌 <strong>Sources cited:</strong> ${docNames}`;
-        row.appendChild(citation);
+        sourcesHtml = `<div class="citation-box">📌 <strong>Sources:</strong> ${escapeHtml(docNames)}</div>`;
       }
 
-      list.appendChild(row);
-      list.scrollTop = list.scrollHeight;
+      row.innerHTML = `
+        <div class="msg-avatar bot">🤖</div>
+        <div style="flex:1;">
+          <div class="msg-bubble">${answer.replace(/\n/g, '<br>')}</div>
+          ${sourcesHtml}
+        </div>
+      `;
+      wrapper.appendChild(row);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      const container = document.getElementById('messages-container');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+      });
     }
   </script>
 </body>
