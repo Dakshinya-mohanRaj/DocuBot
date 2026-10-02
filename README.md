@@ -6,10 +6,10 @@ conversation memory per session.
 
 ## 🚀 Live Demo
 
-> **Try it now: [https://docubot-7oun.onrender.com](https://docubot-7oun.onrender.com)**
+> **Try it now: [https://docubot-7oun.onrender.com](https://docubot-5fy3.onrender.com)
 
 Hosted on **Render** with a modern single-page web UI (upload → chat in seconds). API docs are live at
-[https://docubot-7oun.onrender.com/docs](https://docubot-7oun.onrender.com/docs).
+[https://docubot-7oun.onrender.com/docs](https://docubot-5fy3.onrender.com/docs).
 
 > ⚠️ The free-tier instance sleeps after ~15 min of inactivity — the first request after waking can take ~30–60 s.
 
