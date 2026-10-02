@@ -1,0 +1,4 @@
+# Development and test-only dependencies.
+# Runtime dependencies live in requirements.txt and are NOT repeated here.
+-r requirements.txt
+pytest==9.1.1

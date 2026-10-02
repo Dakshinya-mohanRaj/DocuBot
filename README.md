@@ -124,25 +124,71 @@ docubot/
 │   ├── core/
 │   │   ├── chunking.py        # text splitting
 │   │   ├── vector_store.py    # ChromaDB + sentence-transformers embeddings
-│   │   ├── llm.py             # Groq API calls (with model fallbacks)
+│   │   ├── llm.py             # Groq API calls (single pinned model)
 │   │   └── session_store.py   # in-memory conversation history
 │   └── routes/
 │       ├── ingest.py
 │       ├── chat.py
 │       └── sessions.py
 ├── static/index.html          # single-page web UI
+├── scripts/
+│   ├── fixtures.py            # three-document evaluation corpus
+│   └── eval_rag.py            # retrieval + answer-quality evaluation
+├── tests/                     # pytest regression suite
 ├── data/sample_docs/          # sample doc to test with
 ├── Dockerfile                 # Render/Docker deploy config
 ├── render.yaml                # Render Blueprint
 ├── requirements.txt
+├── requirements-dev.txt
 └── .env.example
 ```
+
+## 🧪 Testing
+
+```bash
+pip install -r requirements-dev.txt
+
+# 44 regression tests, no API calls required
+python -m pytest tests -q
+
+# Multi-document retrieval + answer-quality evaluation (uses the Groq API)
+python scripts/eval_rag.py
+python scripts/eval_rag.py --base-url https://docubot-5fy3.onrender.com
+```
+
+`eval_rag.py` uploads a three-document corpus with deliberately non-overlapping
+numbers, then scores answers across four categories: `single_doc` (right
+document cited), `cross_doc` (all relevant documents cited), `unanswerable`
+(answers must abstain), and `contamination` (facts from other documents must
+not leak in). Current result: **12/13**.
+
+### Configuration
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `GROQ_API_KEY` | — | Required. Groq API key. |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | Chat model. Validated once at startup. |
+| `DOCUBOT_MIN_RELEVANCE` | `0.30` | Combined relevance floor for retrieval. |
+| `DOCUBOT_LEXICAL_WEIGHT` | `0.5` | Weight of lexical overlap vs cosine similarity. |
+| `DOCUBOT_PER_DOC_CAP` | `2` | Max chunks one document may contribute. |
+| `DOCUBOT_CHROMA_PATH` | `./data/chroma` | Vector store location. |
+| `DOCUBOT_COLLECTION` | `docubot_chunks_v2` | Chroma collection name. |
+
+Retrieval combines cosine similarity with lexical term overlap and rejects
+chunks below the relevance floor, so a question no document covers returns an
+explicit "not in your documents" answer with **no sources** instead of citing
+whatever happened to score highest. Raise `DOCUBOT_MIN_RELEVANCE` to be more
+conservative, lower it to answer more questions.
 
 ## ⚠️ Known Limitations
 
 - Session history is in-memory only (resets on restart) — swap in SQLite/Redis for persistence
 - On Render's free tier the filesystem is ephemeral: uploaded documents are lost when the instance sleeps/restarts, and the instance spins down after ~15 min idle
 - No auth — add an API-key middleware before exposing to the public
+- Corpus-wide aggregation questions ("list every limit across all documents")
+  are answered from whichever document scores highest rather than by scanning
+  every document. The relevance floor deliberately prefers abstaining or a
+  partial answer over padding the context with passages below the floor
 
 ## 🔭 Possible Extensions
 

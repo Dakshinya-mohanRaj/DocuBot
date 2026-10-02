@@ -8,3 +8,6 @@ __pycache__/
 .DS_Store
 *.sqlite3
 data/chroma/
+eval_report.json
+__pycache__/
+.pytest_cache/

@@ -7,7 +7,12 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from app.core.chunking import chunk_text
-from app.core.vector_store import add_chunks, collection_count, delete_document
+from app.core.vector_store import (
+    add_chunks,
+    collection_count,
+    delete_document,
+    list_documents,
+)
 
 # Optional heavy dependencies — only required for their respective file types.
 # Imported at module level so linters can resolve them; missing installs are
@@ -48,9 +53,29 @@ def ingest_text(payload: IngestTextRequest) -> dict:
 
     doc_id = payload.doc_id or str(uuid.uuid4())[:8]
     chunks = chunk_text(payload.text)
-    added = add_chunks(doc_id, chunks)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="text produced no usable content")
 
-    return {"doc_id": doc_id, "chunks_added": added, "total_chunks_in_store": collection_count()}
+    replaced = delete_document(doc_id) > 0
+    added = add_chunks(doc_id, chunks, filename=doc_id)
+
+    return {
+        "doc_id": doc_id,
+        "chunks_added": added,
+        "replaced": replaced,
+        "total_chunks_in_store": collection_count(),
+    }
+
+
+@router.get("/ingest/documents")
+def ingest_documents() -> dict:
+    """List every document currently held in the vector store."""
+    documents = list_documents()
+    return {
+        "documents": documents,
+        "document_count": len(documents),
+        "total_chunks_in_store": collection_count(),
+    }
 
 
 def parse_file_content(filename: str, raw: bytes) -> str:
@@ -132,9 +157,20 @@ async def ingest_file(file: UploadFile = File(...)) -> dict:
             raise HTTPException(status_code=400, detail="Uploaded file contained no extractable text.")
 
         chunks = chunk_text(text)
-        added = add_chunks(filename, chunks)
+        if not chunks:
+            raise HTTPException(status_code=400, detail="Uploaded file contained no usable text.")
 
-        return {"doc_id": filename, "chunks_added": added, "total_chunks_in_store": collection_count()}
+        # Re-uploading a file with the same name replaces the previous version
+        # rather than silently keeping stale content.
+        replaced = delete_document(filename) > 0
+        added = add_chunks(filename, chunks, filename=filename)
+
+        return {
+            "doc_id": filename,
+            "chunks_added": added,
+            "replaced": replaced,
+            "total_chunks_in_store": collection_count(),
+        }
     except HTTPException:
         raise
     except Exception as exc:

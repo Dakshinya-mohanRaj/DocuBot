@@ -23,11 +23,35 @@ EXCLUDED_MODEL_MARKERS = (
 )
 
 SYSTEM_PROMPT = """You are DocuBot, a helpful assistant that answers questions strictly \
-based on the provided document context. Rules:
-- Only use information found in the context below.
-- If the answer isn't in the context, say you don't have enough information — do not guess.
-- Keep answers concise and cite which source chunk(s) you used by their doc_id.
-- Respond directly with the final answer. Do NOT output thinking, reasoning, or <think> tags.
+based on the provided document context.
+
+Rules:
+- Answer ONLY from the numbered context excerpts below. Never use outside \
+knowledge or assume facts that are not stated.
+- The excerpts come from different documents. Use an excerpt only if it \
+actually addresses the question, and ignore the rest.
+- Comparisons and cross-document questions are expected. When the question \
+asks you to compare, contrast or summarise across documents, use the \
+relevant excerpt from each one and state each figure next to its own document \
+name. Report what the documents say; do not manufacture a relationship, \
+common metric or conclusion that the documents do not state.
+- Never merge values from different documents into a single number, and never \
+alter a figure. Copy numbers, dates and names exactly as written.
+- Cite the document name(s) you used at the end, in the form [filename]. \
+Cite every document the answer draws on.
+- If the context genuinely does not contain the answer, say plainly that the \
+documents do not cover it. Do not guess or fill gaps from general knowledge. \
+Abstain only when the information is absent -- not merely because a question \
+compares unrelated things.
+- Your own earlier answers in this conversation may have been wrong. Prefer \
+the current context over anything you said previously.
+- Respond directly with the final answer. Do NOT output thinking, reasoning, or \
+<think> tags.
+
+Examples of the expected format:
+The cap on accrued time off is 30 days. [handbook.txt]
+The laptop refresh cycle is 36 months, while the API rate limit is 100 requests \
+per minute. [handbook.txt] [spec.txt]
 """
 
 
@@ -77,7 +101,8 @@ def _strip_thinking(content: str) -> str:
 
 def generate_answer(question: str, context_chunks: list[dict], history: list[dict]) -> str:
     context_block = "\n\n".join(
-        f"[Source: {c['doc_id']}]\n{c['text']}" for c in context_chunks
+        f"[{i}] Source: {c.get('filename') or c['doc_id']}\n{c['text']}"
+        for i, c in enumerate(context_chunks, 1)
     )
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]

@@ -943,8 +943,17 @@
 
       let sourcesHtml = '';
       if (sources && sources.length > 0) {
-        const docNames = [...new Set(sources.map(s => s.doc_id))].join(', ');
-        sourcesHtml = `<div class="citation-box">📌 <strong>Sources:</strong> ${escapeHtml(docNames)}</div>`;
+        const best = {};
+        sources.forEach(s => {
+          const name = s.filename || s.doc_id;
+          const pct = typeof s.similarity === 'number' ? Math.round(s.similarity * 100) : null;
+          if (!(name in best) || (pct !== null && pct > best[name])) best[name] = pct;
+        });
+        const docNames = Object.keys(best).map(name => {
+          const pct = best[name];
+          return pct === null ? escapeHtml(name) : `${escapeHtml(name)} (${pct}% match)`;
+        }).join(', ');
+        sourcesHtml = `<div class="citation-box">📌 <strong>Sources:</strong> ${docNames}</div>`;
       }
 
       row.innerHTML = `
