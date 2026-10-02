@@ -44,3 +44,14 @@ def query(question: str, n_results: int = 4) -> list[dict]:
 
 def collection_count() -> int:
     return _collection.count()
+
+
+def delete_document(doc_id: str) -> int:
+    """Delete all chunks belonging to doc_id from ChromaDB."""
+    existing = _collection.get(where={"doc_id": doc_id})
+    if existing and existing.get("ids"):
+        ids_to_delete = existing["ids"]
+        _collection.delete(ids=ids_to_delete)
+        return len(ids_to_delete)
+    return 0
+

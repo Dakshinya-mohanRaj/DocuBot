@@ -190,6 +190,24 @@
       align-items: center;
       justify-content: space-between;
       color: var(--text-main);
+      gap: 0.5rem;
+    }
+
+    .doc-delete-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0.25rem;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+    .doc-delete-btn:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.15);
     }
 
     .doc-item-name {
@@ -710,14 +728,47 @@
       const item = document.createElement('div');
       item.className = 'doc-item';
       item.innerHTML = `
-        <div class="doc-item-name">
-          <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-          <span>${docName}</span>
+        <div class="doc-item-name" title="${escapeHtml(docName)}">
+          <svg class="icon" style="width:14px; height:14px; flex-shrink:0;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          <span>${escapeHtml(docName)}</span>
         </div>
-        <span style="color: #34d399; font-size: 0.75rem;">Ready</span>
+        <button class="doc-delete-btn" title="Delete document" onclick="deleteDoc('${escapeHtml(docName)}', this)">
+          <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
       `;
       docList.appendChild(item);
     }
+
+    async function deleteDoc(docId, btnElement) {
+      if (!confirm(`Are you sure you want to delete "${docId}" from vector store?`)) return;
+
+      try {
+        const encodedId = encodeURIComponent(docId);
+        const res = await fetch(`/ingest/${encodedId}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (res.ok) {
+          const docItem = btnElement.closest('.doc-item');
+          if (docItem) docItem.remove();
+
+          const docList = document.getElementById('doc-list');
+          if (docList.children.length === 0) {
+            docList.innerHTML = `
+              <div class="doc-empty" id="doc-empty">
+                No documents uploaded.<br>Add a file or paste text to chat.
+              </div>
+            `;
+          }
+
+          showToast(`Deleted document "${docId}"!`);
+        } else {
+          alert('Delete failed: ' + (data.detail || 'Could not delete document'));
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
 
     async function sendQuestion() {
       const question = chatInput.value.trim();

@@ -5,9 +5,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from app.core.chunking import chunk_text
-from app.core.vector_store import add_chunks, collection_count
+from app.core.vector_store import add_chunks, collection_count, delete_document
 
 router = APIRouter()
+
 
 
 class IngestTextRequest(BaseModel):
@@ -122,3 +123,14 @@ async def ingest_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to ingest file: {type(e).__name__}: {str(e)}")
+
+
+@router.delete("/ingest/{doc_id:path}")
+def delete_ingested_doc(doc_id: str):
+    deleted_count = delete_document(doc_id)
+    return {
+        "message": f"Successfully deleted document '{doc_id}'",
+        "chunks_deleted": deleted_count,
+        "total_chunks_in_store": collection_count(),
+    }
+
