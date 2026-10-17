@@ -213,7 +213,7 @@ def main() -> int:
             print(f"  {name:18} UPLOAD FAILED: {exc}")
             return 2
 
-    model = os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    model = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
     print(f"\nModel: {model}\n" + "=" * 100)
 
     rows = []

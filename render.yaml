@@ -9,3 +9,24 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      # Pin the embedding model baked into the image (see Dockerfile). If you
+      # change this you must also clear data/chroma and re-ingest.
+      - key: DOCUBOT_EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+    # ---------------------------------------------------------------------
+    # PERSISTENCE (optional, requires a paid instance type)
+    #
+    # Render's free tier has an ephemeral filesystem: the ChromaDB store at
+    # data/chroma is wiped on every deploy, restart, or spin-down. To keep the
+    # knowledge base, upgrade the plan and mount a persistent disk, then point
+    # DOCUBOT_CHROMA_PATH at it. Uncomment the block below.
+    #
+    # disk:
+    #   name: docubot-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    #
+    # and add:
+    #   - key: DOCUBOT_CHROMA_PATH
+    #     value: /var/data/chroma
+    # ---------------------------------------------------------------------

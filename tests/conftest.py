@@ -10,6 +10,9 @@ os.environ.setdefault(
     "DOCUBOT_CHROMA_PATH", tempfile.mkdtemp(prefix="docubot_tests_")
 )
 os.environ.setdefault("DOCUBOT_COLLECTION", "docubot_test_chunks")
+# Never rate-limit the test suite (one client IP would trip the per-IP buckets).
+os.environ["DOCUBOT_RATE_LIMIT_CHAT"] = "0"
+os.environ["DOCUBOT_RATE_LIMIT_INGEST"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -27,6 +30,20 @@ def _clean_store():
     wipe()
     yield
     wipe()
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm(monkeypatch):
+    """Default every test to a stubbed LLM so no test spends a paid API call.
+
+    Tests that need different behaviour (error paths, capturing arguments,
+    asserting the LLM is never called) override this with their own
+    monkeypatch, which runs after this fixture.
+    """
+    monkeypatch.setattr(
+        "app.routes.chat.generate_answer",
+        lambda question, hits, history: "Stub answer [doc]",
+    )
 
 
 @pytest.fixture()

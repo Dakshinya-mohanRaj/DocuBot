@@ -6,11 +6,17 @@ retrieval applies a relevance floor plus a per-document cap so that one verbose
 document cannot consume every slot in the context window.
 """
 
+import logging
 import os
 import re
+import uuid
 
 import chromadb
 from chromadb.utils import embedding_functions
+
+from app.core.logging_config import log_event
+
+logger = logging.getLogger("docubot.vector_store")
 
 CHROMA_PATH = os.environ.get("DOCUBOT_CHROMA_PATH", "./data/chroma")
 COLLECTION_NAME = os.environ.get("DOCUBOT_COLLECTION", "docubot_chunks_v2")
@@ -18,21 +24,17 @@ COLLECTION_NAME = os.environ.get("DOCUBOT_COLLECTION", "docubot_chunks_v2")
 # Chunks whose combined relevance falls below this are treated as unrelated, so
 # the caller can abstain instead of handing weak context to the model.
 #
-# A cosine-similarity floor alone cannot separate signal from noise here:
-# "laptop refresh cycle" scored 0.244 while the unanswerable "refund policy"
-# scored 0.228 -- a 0.016 gap no threshold could split reliably. Adding a
-# lexical term-overlap term widens that gap to 0.135, which does separate.
-#
-# 0.30 sits near the midpoint of the calibrated gap. On the evaluation corpus
-# the lowest-scoring genuinely answerable question reached 0.362 and the
-# highest-scoring unanswerable one reached 0.228. Override with
-# DOCUBOT_MIN_RELEVANCE if your corpus behaves differently.
+# 0.30 is calibrated for all-MiniLM-L6-v2 on the evaluation corpus: the lowest
+# genuinely answerable question scored 0.362 and the highest unanswerable one
+# scored 0.228. Override with DOCUBOT_MIN_RELEVANCE if your corpus behaves
+# differently.
 MIN_RELEVANCE = float(os.environ.get("DOCUBOT_MIN_RELEVANCE", "0.30"))
 
 # Weight of the lexical term-overlap term relative to cosine similarity.
 LEXICAL_WEIGHT = float(os.environ.get("DOCUBOT_LEXICAL_WEIGHT", "0.5"))
 
-# Most chunks any single document may contribute to one context window.
+# Most chunks any single document may contribute to one context window. Kept low
+# so one verbose document cannot crowd out the rest and to bound prompt tokens.
 PER_DOC_CAP = int(os.environ.get("DOCUBOT_PER_DOC_CAP", "2"))
 
 # Over-fetch before filtering, so the cap does not starve other documents.
@@ -56,8 +58,16 @@ _STEM_MIN = 4
 _client = chromadb.PersistentClient(path=CHROMA_PATH)
 
 # Local, free embedding model — no API key needed for this part.
+# all-MiniLM-L6-v2 (384-dim, 22M params) is ~5x smaller and much faster to encode
+# than all-mpnet-base-v2 (768-dim, 110M params), for a modest retrieval-quality
+# drop — keeping memory, startup time, and CPU low. Bake the model you choose
+# into the image (see Dockerfile) so it is never downloaded at runtime.
+# NOTE: After changing the model you MUST clear the Chroma database and
+# re-ingest all documents because embeddings from different models are
+# incompatible. Delete ./data/chroma and restart the server.
+_EMBEDDING_MODEL = os.environ.get("DOCUBOT_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
+    model_name=_EMBEDDING_MODEL
 )
 
 _collection = _client.get_or_create_collection(
@@ -71,27 +81,70 @@ _collection = _client.get_or_create_collection(
 _embedding_fn(["docubot-warmup"])
 
 
-def add_chunks(doc_id: str, chunks: list[str], filename: str | None = None) -> int:
-    """Replace all chunks for doc_id and return how many were actually stored.
+def add_chunks(
+    doc_id: str,
+    chunks: list[str],
+    filename: str | None = None,
+    metadatas: list[dict] | None = None,
+) -> int:
+    """Write chunks for doc_id, replacing any previously stored version.
 
-    Chunk ids are derived from doc_id, and ChromaDB's ``add`` silently skips ids
-    that already exist (it only logs "Insert of existing embedding ID"). That
-    made re-uploading an edited file a no-op while still reporting success, so
-    the previous version is always deleted first.
+    Writes are made "generation safe": new chunks are written under fresh ids
+    first and only then are the old ids removed. A crash or embedding failure
+    mid-write therefore leaves the previous good version intact instead of
+    deleting it first (the old delete-then-add order could silently drop a
+    document when the new write failed).
+
+    ``metadatas`` may supply per-chunk metadata (e.g. ``{"page": 3}``); it is
+    merged with the fixed keys, which always win.
+
+    Returns the number of chunks genuinely stored (verified by read-back), not
+    the number intended.
     """
-    delete_document(doc_id)
+    old_ids = (_collection.get(where={"doc_id": doc_id}).get("ids")) or []
     if not chunks:
+        # An empty re-upload is still a replacement: drop the old version.
+        if old_ids:
+            _collection.delete(ids=old_ids)
         return 0
 
     display = filename or doc_id
-    ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
-    metadatas = [
-        {"doc_id": doc_id, "chunk_index": i, "filename": display}
-        for i in range(len(chunks))
-    ]
-    _collection.add(ids=ids, documents=chunks, metadatas=metadatas)
+    generation = uuid.uuid4().hex[:8]
+    ids = [f"{doc_id}::{generation}::{i}" for i in range(len(chunks))]
 
-    # Report what is genuinely in the store, not what we intended to write.
+    base_meta = []
+    for i in range(len(chunks)):
+        extra = (metadatas[i] if metadatas and i < len(metadatas) else None) or {}
+        meta = {k: v for k, v in extra.items() if v is not None}
+        meta.update({"doc_id": doc_id, "chunk_index": i, "filename": display})
+        base_meta.append(meta)
+
+    try:
+        _collection.add(ids=ids, documents=chunks, metadatas=base_meta)
+    except Exception:
+        # Roll back any partially written new chunks so the store does not end
+        # up with a half-indexed document, and leave the old version in place.
+        try:
+            _collection.delete(ids=ids)
+        except Exception:
+            log_event(logger, "rollback_failed", level=logging.ERROR, doc_id=doc_id)
+        log_event(logger, "add_chunks_failed", level=logging.ERROR, doc_id=doc_id)
+        raise
+
+    if old_ids:
+        try:
+            _collection.delete(ids=old_ids)
+        except Exception:
+            # New content is safely stored; the stale generation is dead weight
+            # that list_documents would double-count. Surface it loudly.
+            log_event(
+                logger,
+                "stale_generation_not_deleted",
+                level=logging.WARNING,
+                doc_id=doc_id,
+                stale=len(old_ids),
+            )
+
     stored = _collection.get(ids=ids).get("ids") or []
     return len(stored)
 
@@ -185,6 +238,7 @@ def query(
                 "text": document,
                 "doc_id": doc_id,
                 "chunk_index": metadata.get("chunk_index", 0),
+                "page": metadata.get("page"),
                 "filename": metadata.get("filename") or doc_id,
                 "similarity": round(similarity, 4),
                 "lexical_overlap": round(overlap, 4),
@@ -211,6 +265,12 @@ def query(
 
 def collection_count() -> int:
     return _collection.count()
+
+
+def document_exists(doc_id: str) -> bool:
+    """True if any chunk for doc_id is stored (non-destructive)."""
+    found = _collection.get(where={"doc_id": doc_id}, limit=1)
+    return bool((found or {}).get("ids"))
 
 
 def list_documents() -> list[dict]:

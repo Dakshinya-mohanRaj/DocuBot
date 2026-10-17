@@ -67,7 +67,7 @@ def _join(parts: list[str]) -> str:
     return " ".join(parts)
 
 
-def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> list[str]:
+def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[str]:
     """Split text into overlapping chunks on sentence boundaries.
 
     Chunks are packed up to ``chunk_size`` characters and each chunk repeats up

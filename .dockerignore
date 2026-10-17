@@ -4,5 +4,8 @@ venv
 __pycache__
 *.pyc
 data/chroma
+data/.cache
 .env
 .vscode
+.pytest_cache
+tests

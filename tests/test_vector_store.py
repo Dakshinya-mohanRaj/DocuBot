@@ -125,3 +125,37 @@ def test_lexical_overlap_matches_across_word_forms():
     overlap = _lexical_overlap(_content_tokens("laptops refreshed"),
                                _content_tokens("The laptop refresh cycle"))
     assert overlap > 0.0
+
+
+# ---- generation-safe writes -------------------------------------------------
+
+
+def test_extra_metadata_is_stored_and_returned(store):
+    store.add_chunks(
+        "doc.pdf", ["The code is 42."], filename="doc.pdf", metadatas=[{"page": 7}]
+    )
+    hits = query("what is the code", min_relevance=0.0)
+    assert hits and hits[0]["page"] == 7
+
+
+def test_failed_write_keeps_previous_version(store, monkeypatch):
+    """A crash mid-re-add must not lose the previously good chunks."""
+    store.add_chunks("a.txt", ["original good content"], filename="a.txt")
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(store._collection, "add", explode)
+    try:
+        store.add_chunks("a.txt", ["replacement"], filename="a.txt")
+    except RuntimeError:
+        pass
+
+    stored = store._collection.get(where={"doc_id": "a.txt"})
+    assert stored["documents"] == ["original good content"]
+
+
+def test_document_exists_helper(store):
+    assert store.document_exists("a.txt") is False
+    store.add_chunks("a.txt", ["hello"], filename="a.txt")
+    assert store.document_exists("a.txt") is True

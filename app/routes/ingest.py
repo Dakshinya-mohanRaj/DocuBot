@@ -1,16 +1,19 @@
 import csv
 import io
+import re
 import uuid
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.core.chunking import chunk_text
 from app.core.vector_store import (
     add_chunks,
     collection_count,
     delete_document,
+    document_exists,
     list_documents,
 )
 
@@ -40,10 +43,30 @@ router = APIRouter()
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
+TEXT_EXTENSIONS = (".txt", ".md", ".json", ".log")
+SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".xlsx", ".csv") + TEXT_EXTENSIONS
+
+_UNSAFE_CHARS = re.compile(r"[\x00-\x1f<>:\"|?*\\/]+")
+
+
+def sanitize_doc_id(filename: str) -> str:
+    """Derive a safe document id from a user-supplied filename.
+
+    Strips any directory component and control/path characters so a crafted
+    filename cannot escape its namespace or collide oddly. The original name is
+    still stored separately as display metadata.
+    """
+    name = PureWindowsPath(filename).name
+    name = PurePosixPath(name).name
+    name = _UNSAFE_CHARS.sub("_", name).strip("._ ")
+    if not name:
+        name = "document"
+    return name[:200]
+
 
 class IngestTextRequest(BaseModel):
-    doc_id: str | None = None
-    text: str
+    doc_id: str | None = Field(default=None, max_length=200)
+    text: str = Field(min_length=1, max_length=2_000_000)
 
 
 @router.post("/ingest/text")
@@ -51,13 +74,13 @@ def ingest_text(payload: IngestTextRequest) -> dict:
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="text cannot be empty")
 
-    doc_id = payload.doc_id or str(uuid.uuid4())[:8]
+    doc_id = sanitize_doc_id(payload.doc_id) if payload.doc_id else str(uuid.uuid4())[:8]
     chunks = chunk_text(payload.text)
     if not chunks:
         raise HTTPException(status_code=400, detail="text produced no usable content")
 
-    replaced = delete_document(doc_id) > 0
-    added = add_chunks(doc_id, chunks, filename=doc_id)
+    replaced = document_exists(doc_id)
+    added = add_chunks(doc_id, chunks, filename=payload.doc_id or doc_id)
 
     return {
         "doc_id": doc_id,
@@ -78,34 +101,60 @@ def ingest_documents() -> dict:
     }
 
 
-def parse_file_content(filename: str, raw: bytes) -> str:
+def parse_file_blocks(filename: str, raw: bytes) -> list[tuple[str, int | None]]:
+    """Parse a file into (text, page) blocks.
+
+    ``page`` is the 1-based PDF page number, or ``None`` for formats without
+    pages. Chunking each block separately keeps citations page-accurate.
+    """
     lower = filename.lower()
 
     # 1. PDF Documents (.pdf)
     if lower.endswith(".pdf"):
         if _pypdf is None:
-            raise HTTPException(status_code=400, detail="PDF parsing requires 'pypdf'. Run: pip install pypdf")
+            raise HTTPException(status_code=400, detail="PDF parsing requires 'pypdf'.")
         try:
             reader = _pypdf.PdfReader(io.BytesIO(raw))
-            extracted = [t for page in reader.pages if (t := page.extract_text())]
-            return "\n\n".join(extracted)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Failed to parse PDF file: {exc}") from exc
+            blocks: list[tuple[str, int | None]] = []
+            for page_number, page in enumerate(reader.pages, start=1):
+                try:
+                    text = page.extract_text() or ""
+                except Exception:
+                    text = ""
+                blocks.append((text, page_number))
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not read PDF '{filename}'. It may be corrupted or password-protected.",
+            )
+        if not any(text.strip() for text, _ in blocks):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"'{filename}' contains no extractable text. It looks like a "
+                    "scanned or image-only PDF, which OCR is needed to read."
+                ),
+            )
+        return blocks
 
     # 2. Word Documents (.docx)
-    elif lower.endswith(".docx"):
+    if lower.endswith(".docx"):
         if _docx is None:
-            raise HTTPException(status_code=400, detail="Word parsing requires 'python-docx'. Run: pip install python-docx")
+            raise HTTPException(status_code=400, detail="Word parsing requires 'python-docx'.")
         try:
             document = _docx.Document(io.BytesIO(raw))
-            return "\n".join(p.text for p in document.paragraphs if p.text.strip())
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Failed to parse Word file: {exc}") from exc
+            text = "\n".join(p.text for p in document.paragraphs if p.text.strip())
+            return [(text, None)]
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not read Word file '{filename}'.",
+            )
 
     # 3. Excel Spreadsheets (.xlsx)
-    elif lower.endswith(".xlsx"):
+    if lower.endswith(".xlsx"):
         if _openpyxl is None:
-            raise HTTPException(status_code=400, detail="Excel parsing requires 'openpyxl'. Run: pip install openpyxl")
+            raise HTTPException(status_code=400, detail="Excel parsing requires 'openpyxl'.")
         try:
             wb = _openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
             lines: list[str] = []
@@ -115,73 +164,99 @@ def parse_file_content(filename: str, raw: bytes) -> str:
                     row_str = [str(cell) if cell is not None else "" for cell in row]
                     if any(row_str):
                         lines.append(" | ".join(row_str))
-            return "\n".join(lines)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {exc}") from exc
+            return [("\n".join(lines), None)]
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not read Excel file '{filename}'.",
+            )
 
     # 4. CSV Files (.csv)
-    elif lower.endswith(".csv"):
+    if lower.endswith(".csv"):
         try:
             decoded = raw.decode("utf-8", errors="ignore")
             reader = csv.reader(io.StringIO(decoded))
-            return "\n".join(" | ".join(row) for row in reader if any(row))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Failed to parse CSV file: {exc}") from exc
+            text = "\n".join(" | ".join(row) for row in reader if any(row))
+            return [(text, None)]
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not read CSV file '{filename}'.",
+            )
 
     # 5. Text & Markdown (.txt, .md, .json, .log)
-    elif lower.endswith((".txt", ".md", ".json", ".log")):
-        return raw.decode("utf-8", errors="ignore")
+    if lower.endswith(TEXT_EXTENSIONS):
+        return [(raw.decode("utf-8", errors="ignore"), None)]
 
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file format '{filename}'. Supported: .pdf, .docx, .xlsx, .csv, .txt, .md",
-        )
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported file format '{filename}'. Supported: {', '.join(SUPPORTED_EXTENSIONS)}",
+    )
+
+
+def parse_file_content(filename: str, raw: bytes) -> str:
+    """Backwards-compatible helper: flattened text for a single file."""
+    return "\n\n".join(text for text, _ in parse_file_blocks(filename, raw))
 
 
 @router.post("/ingest/file")
 async def ingest_file(file: UploadFile = File(...)) -> dict:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Uploaded file has no name.")
+
+    if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{filename}'. Supported: {', '.join(SUPPORTED_EXTENSIONS)}",
+        )
+
+    # Read at most one byte over the limit so an oversized upload is rejected
+    # without buffering the whole body into memory.
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="File too large. Maximum allowed size is 10 MB.",
+        )
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
     try:
-        raw = await file.read()
-
-        if len(raw) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large ({len(raw) // (1024 * 1024)} MB). Maximum allowed size is 10 MB.",
-            )
-
-        filename: str = file.filename or "unknown"
-        text = parse_file_content(filename, raw)
-
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="Uploaded file contained no extractable text.")
-
-        chunks = chunk_text(text)
-        if not chunks:
-            raise HTTPException(status_code=400, detail="Uploaded file contained no usable text.")
-
-        # Re-uploading a file with the same name replaces the previous version
-        # rather than silently keeping stale content.
-        replaced = delete_document(filename) > 0
-        added = add_chunks(filename, chunks, filename=filename)
-
-        return {
-            "doc_id": filename,
-            "chunks_added": added,
-            "replaced": replaced,
-            "total_chunks_in_store": collection_count(),
-        }
+        blocks = parse_file_blocks(filename, raw)
     except HTTPException:
         raise
-    except Exception as exc:
+
+    chunks: list[str] = []
+    chunk_meta: list[dict] = []
+    for text, page in blocks:
+        for chunk in chunk_text(text):
+            chunks.append(chunk)
+            chunk_meta.append({"page": page} if page is not None else {})
+
+    if not chunks:
         raise HTTPException(
-            status_code=500, detail=f"Failed to ingest file: {type(exc).__name__}: {exc}"
-        ) from exc
+            status_code=400, detail="Uploaded file contained no usable text."
+        )
+
+    # The stored doc_id is a sanitized name; the display name is preserved.
+    doc_id = sanitize_doc_id(filename)
+    replaced = document_exists(doc_id)
+    added = add_chunks(doc_id, chunks, filename=filename, metadatas=chunk_meta)
+
+    return {
+        "doc_id": doc_id,
+        "chunks_added": added,
+        "replaced": replaced,
+        "total_chunks_in_store": collection_count(),
+    }
 
 
 @router.delete("/ingest/{doc_id:path}")
 def delete_ingested_doc(doc_id: str) -> dict:
     deleted_count = delete_document(doc_id)
+    if deleted_count == 0:
+        raise HTTPException(status_code=404, detail=f"No document named '{doc_id}' was found.")
     return {
         "message": f"Successfully deleted document '{doc_id}'",
         "chunks_deleted": deleted_count,

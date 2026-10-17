@@ -582,12 +582,76 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    /* New chat button in sidebar header */
+    .btn-new-chat {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 8px;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.2s ease;
+    }
+    .btn-new-chat:hover { color: var(--text-main); background: var(--card-bg); }
+
+    /* Abstention (no answer found) styling */
+    .msg-bubble.abstained {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Mobile hamburger — hidden on desktop */
+    .sidebar-toggle {
+      display: none;
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      cursor: pointer;
+      padding: 0.25rem;
+      margin-right: 0.5rem;
+      align-items: center;
+    }
+
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 9;
+    }
+    .sidebar-backdrop.show { display: block; }
+
+    /* Responsive: collapse the sidebar into an overlay on narrow screens */
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 82%;
+        max-width: 320px;
+        transform: translateX(-105%);
+        box-shadow: var(--shadow-lg);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-toggle { display: flex; }
+      .messages-wrapper { padding: 0 1rem; }
+      .msg-bubble { max-width: 92%; }
+      .input-area { padding: 0.75rem 1rem 1rem; }
+      .top-navbar { padding: 0 1rem; }
+    }
   </style>
 </head>
 <body>
 
   <!-- Left Sidebar -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="brand-header">
       <div class="brand">
         <div class="brand-avatar">
@@ -595,6 +659,10 @@
         </div>
         <span>DocuBot</span>
       </div>
+      <button class="btn-new-chat" onclick="newChat()" title="Start a new conversation">
+        <svg class="icon" style="width:13px;height:13px;" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        New
+      </button>
     </div>
 
     <!-- Upload Document Button -->
@@ -608,7 +676,7 @@
     <div class="paste-card">
       <div class="paste-title">Paste Raw Text</div>
       <textarea id="paste-text" class="paste-textarea" placeholder="Paste article or notes context here..."></textarea>
-      <button class="btn-secondary" onclick="handleTextIngest()">+ Ingest Text</button>
+      <button class="btn-secondary" id="paste-btn" onclick="handleTextIngest()">+ Ingest Text</button>
     </div>
 
     <div class="doc-section-title">Knowledge Base</div>
@@ -623,9 +691,14 @@
   <div class="chat-container">
     <!-- Navbar -->
     <div class="top-navbar">
-      <div class="model-selector">
-        <span>DocuBot 4.0 (RAG)</span>
-        <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <div style="display:flex; align-items:center;">
+        <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+          <svg class="icon" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div class="model-selector">
+          <span>DocuBot 4.0 (RAG)</span>
+          <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
       </div>
 
       <div class="status-badge" id="status-badge">
@@ -681,6 +754,9 @@
     </div>
   </div>
 
+  <!-- Mobile sidebar backdrop -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
   <!-- Notification Toast -->
   <div class="toast" id="toast"></div>
 
@@ -692,29 +768,54 @@
     const chatInput = document.getElementById('chat-input');
     const pasteText = document.getElementById('paste-text');
 
+    // Conversation state. sessionId stays null until the backend issues one on
+    // the first /chat call; every later message reuses it so multi-turn memory
+    // works (previously it was dropped, so each message started a new session).
+    let sessionId = null;
+    let chatInFlight = false;
+    let backendReady = false;
+
+    // Snapshot of the empty-state hero so "New chat" can restore it exactly.
+    const initialHeroHtml = document.getElementById('messages-wrapper').innerHTML;
+
     function setBackendReady(ready) {
+      backendReady = ready;
       statusDot.classList.toggle('starting', !ready);
       statusLabel.textContent = ready ? 'Backend Ready' : 'Backend warming up…';
-      sendBtn.disabled = !ready;
+      sendBtn.disabled = !ready || chatInFlight;
       chatInput.disabled = !ready;
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebar-backdrop').classList.toggle('show');
     }
 
     async function pollBackendHealth() {
       setBackendReady(false);
-      for (let i = 0; i < 600; i++) {
+      let announced = false;
+      // Keep polling forever so a restart is detected instead of leaving the
+      // badge stuck on a stale "ready".
+      for (;;) {
+        let ok = false;
         try {
           const res = await fetch('/health');
-          if (res.ok) {
-            setBackendReady(true);
-            showToast('Backend is ready!');
-            return;
-          }
-        } catch (e) {}
-        await new Promise(r => setTimeout(r, 1000));
+          ok = res.ok;
+        } catch (e) { ok = false; }
+
+        if (ok && !backendReady) {
+          setBackendReady(true);
+          loadDocuments();
+          if (!announced) { showToast('Backend is ready!'); announced = true; }
+        } else if (!ok && backendReady) {
+          setBackendReady(false);
+          showToast('Backend connection lost — reconnecting…', true);
+        }
+        await new Promise(r => setTimeout(r, ok ? 30000 : 2000));
       }
-      statusLabel.textContent = 'Backend offline';
     }
     pollBackendHealth();
+    loadDocuments();
 
     let toastTimer = null;
     function showToast(msg, isError = false) {
@@ -760,24 +861,30 @@
         let data = {};
         if (body) { try { data = JSON.parse(body); } catch (e) {} }
 
+        loadingItem.remove();
         if (res.ok) {
-          // Replace loading item with ready item
-          loadingItem.remove();
-          addDocToList(file.name);
-          showToast(`✅ "${file.name}" ingested!`);
+          showToast(`✅ "${file.name}" ingested (${data.chunks_added} chunks)`);
+          loadDocuments();
         } else {
-          loadingItem.remove();
           restoreEmptyIfNeeded();
-          showToast('Upload failed: ' + (data.detail || body), true);
+          showToast(uploadErrorMessage(res.status, data.detail || body), true);
         }
       } catch (e) {
         loadingItem.remove();
         restoreEmptyIfNeeded();
-        showToast('Error: ' + e.message, true);
+        showToast('Upload failed: could not reach the server.', true);
       } finally {
         event.target.value = '';
         if (uploadBtn) uploadBtn.disabled = false;
       }
+    }
+
+    function uploadErrorMessage(status, detail) {
+      if (status === 413) return 'File too large. Maximum allowed size is 10 MB.';
+      if (status === 400) return detail || 'That file could not be read.';
+      if (status === 429) return 'Too many uploads — please wait a minute and try again.';
+      if (status >= 500) return 'The server could not process the upload. Please try again.';
+      return detail || 'Upload failed.';
     }
 
     function addDocLoading(fileName) {
@@ -810,7 +917,10 @@
 
     async function handleTextIngest() {
       const text = pasteText.value.trim();
-      if (!text) return alert('Please enter text first.');
+      if (!text) { showToast('Please enter some text first.', true); return; }
+
+      const pasteBtn = document.getElementById('paste-btn');
+      if (pasteBtn) pasteBtn.disabled = true;
 
       try {
         const res = await fetch('/ingest/text', {
@@ -818,24 +928,56 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: text })
         });
-        const data = await res.json();
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
         if (res.ok) {
           pasteText.value = '';
-          addDocToList('Pasted Snippet (' + data.doc_id + ')');
           showToast('Text ingested successfully!');
+          loadDocuments();
         } else {
-          alert('Ingest failed: ' + data.detail);
+          showToast('Ingest failed: ' + (data.detail || res.status), true);
         }
       } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Ingest failed: could not reach the server.', true);
+      } finally {
+        if (pasteBtn) pasteBtn.disabled = false;
       }
     }
 
-    function addDocToList(docName) {
+    // Fetch the knowledge base from the backend. Called on load and after every
+    // mutation, so a page refresh (or another tab) shows the true server state
+    // instead of a stale/empty list.
+    async function loadDocuments() {
+      const docList = document.getElementById('doc-list');
+      if (!docList) return;
+      try {
+        const res = await fetch('/ingest/documents');
+        if (!res.ok) return;
+        const data = await res.json();
+        renderDocuments(data.documents || []);
+      } catch (e) {
+        // Backend not reachable yet; the health poll will trigger a reload.
+      }
+    }
+
+    function renderDocuments(docs) {
+      const docList = document.getElementById('doc-list');
+      docList.innerHTML = '';
+      if (!docs.length) {
+        docList.innerHTML = `<div class="doc-empty" id="doc-empty">No documents uploaded.<br>Add a file or paste text to chat.</div>`;
+        return;
+      }
+      docs.forEach(d => addDocToList(d.filename || d.doc_id, d.doc_id));
+    }
+
+    function addDocToList(docName, docId) {
       const docList = document.getElementById('doc-list');
       const emptyPlaceholder = document.getElementById('doc-empty');
       if (emptyPlaceholder) emptyPlaceholder.remove();
 
+      // The delete target must be the real doc_id, not the display label
+      // (pasted snippets previously deleted the wrong id and silently no-oped).
+      const deleteId = docId || docName;
       const item = document.createElement('div');
       item.className = 'doc-item';
       item.innerHTML = `
@@ -843,7 +985,7 @@
           <svg class="icon" style="width:14px; height:14px; flex-shrink:0;" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
           <span>${escapeHtml(docName)}</span>
         </div>
-        <button class="doc-delete-btn" title="Delete document" data-docid="${escapeHtml(docName)}" onclick="deleteDoc(this)">
+        <button class="doc-delete-btn" title="Delete document" data-docid="${escapeHtml(deleteId)}" onclick="deleteDoc(this)">
           <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         </button>
       `;
@@ -860,57 +1002,95 @@
 
       try {
         const res = await fetch(`/ingest/${encodeURIComponent(docId)}`, { method: 'DELETE' });
-        const data = await res.json();
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
 
         if (res.ok) {
           const docItem = btnElement.closest('.doc-item');
           if (docItem) docItem.remove();
           restoreEmptyIfNeeded();
           showToast(`🗑️ Deleted "${docId}"`);
+          loadDocuments();
         } else {
           btnElement.disabled = false;
           btnElement.style.opacity = '';
-          showToast('Delete failed: ' + (data.detail || 'Unknown error'), true);
+          if (res.status === 404) {
+            showToast('That document was already removed.', true);
+            loadDocuments();
+          } else {
+            showToast('Delete failed: ' + (data.detail || 'Unknown error'), true);
+          }
         }
       } catch (e) {
         btnElement.disabled = false;
         btnElement.style.opacity = '';
-        showToast('Error: ' + e.message, true);
+        showToast('Delete failed: could not reach the server.', true);
       }
+    }
+
+    function newChat() {
+      sessionId = null;
+      const wrapper = document.getElementById('messages-wrapper');
+      wrapper.innerHTML = initialHeroHtml;
+      chatInput.focus();
     }
 
 
 
     async function sendQuestion() {
+      if (chatInFlight || !backendReady) return;
       const question = chatInput.value.trim();
       if (!question) return;
+
+      chatInFlight = true;
+      sendBtn.disabled = true;
 
       const heroState = document.getElementById('hero-state');
       if (heroState) heroState.style.display = 'none';
 
       appendUserMessage(question);
       chatInput.value = '';
+      closeSidebarOnMobile();
 
       const loadingDiv = appendBotLoading();
 
       try {
+        const payload = { message: question };
+        if (sessionId) payload.session_id = sessionId;
+
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: question })
+          body: JSON.stringify(payload)
         });
-        const data = await res.json();
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
 
         loadingDiv.remove();
 
         if (res.ok) {
-          appendBotMessage(data.answer, data.sources);
+          if (data.session_id) sessionId = data.session_id;
+          appendBotMessage(data.answer, data.sources, data.abstained);
+        } else if (res.status === 503 || res.status === 502) {
+          appendBotMessage('The answer service is temporarily unavailable. Please try again in a moment.');
+        } else if (res.status === 429) {
+          appendBotMessage('Too many questions right now — please wait a minute and try again.');
         } else {
-          appendBotMessage('Error: ' + (data.detail || 'Could not generate answer'));
+          appendBotMessage('Error: ' + (data.detail || 'Could not generate an answer'));
         }
       } catch (e) {
         loadingDiv.remove();
-        appendBotMessage('Error connecting to backend server.');
+        appendBotMessage('Error connecting to the backend server.');
+      } finally {
+        chatInFlight = false;
+        sendBtn.disabled = !backendReady;
+      }
+    }
+
+    function closeSidebarOnMobile() {
+      if (window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebar-backdrop').classList.remove('show');
       }
     }
 
@@ -936,30 +1116,33 @@
       return row;
     }
 
-    function appendBotMessage(answer, sources) {
+    function appendBotMessage(answer, sources, abstained) {
       const wrapper = document.getElementById('messages-wrapper');
       const row = document.createElement('div');
       row.className = 'msg-row bot';
 
       let sourcesHtml = '';
       if (sources && sources.length > 0) {
+        // similarity is cosine similarity in [0,1] — a relative closeness score,
+        // NOT a probability or percent confidence. Label it honestly.
         const best = {};
         sources.forEach(s => {
           const name = s.filename || s.doc_id;
-          const pct = typeof s.similarity === 'number' ? Math.round(s.similarity * 100) : null;
-          if (!(name in best) || (pct !== null && pct > best[name])) best[name] = pct;
+          const sim = typeof s.similarity === 'number' ? s.similarity : null;
+          if (!(name in best) || (sim !== null && sim > best[name])) best[name] = sim;
         });
         const docNames = Object.keys(best).map(name => {
-          const pct = best[name];
-          return pct === null ? escapeHtml(name) : `${escapeHtml(name)} (${pct}% match)`;
+          const sim = best[name];
+          return sim === null ? escapeHtml(name) : `${escapeHtml(name)} (similarity ${sim.toFixed(2)})`;
         }).join(', ');
         sourcesHtml = `<div class="citation-box">📌 <strong>Sources:</strong> ${docNames}</div>`;
       }
 
+      const bubbleClass = abstained ? 'msg-bubble abstained' : 'msg-bubble';
       row.innerHTML = `
         <div class="msg-avatar bot">🤖</div>
         <div style="flex:1;">
-          <div class="msg-bubble">${answer.replace(/\n/g, '<br>')}</div>
+          <div class="${bubbleClass}">${escapeHtml(answer).replace(/\n/g, '<br>')}</div>
           ${sourcesHtml}
         </div>
       `;
@@ -973,7 +1156,8 @@
     }
 
     function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, function(m) {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/[&<>"']/g, function(m) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
       });
     }
