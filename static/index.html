@@ -497,6 +497,36 @@
       gap: 0.5rem;
     }
 
+    /* Structured answers (analysis tables / bullet lists) */
+    .msg-bubble table {
+      border-collapse: collapse;
+      margin: 0.6rem 0;
+      font-size: 0.86rem;
+      width: 100%;
+    }
+
+    .msg-bubble th,
+    .msg-bubble td {
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .msg-bubble th {
+      background: rgba(255, 255, 255, 0.05);
+      font-weight: 600;
+    }
+
+    .msg-bubble ul {
+      margin: 0.4rem 0 0.4rem 1.1rem;
+      padding: 0;
+    }
+
+    .msg-bubble li {
+      margin: 0.15rem 0;
+    }
+
     /* Bottom ChatGPT Floating Input Bar */
     .input-area {
       padding: 1rem 1.5rem 1.5rem;
@@ -1142,7 +1172,7 @@
       row.innerHTML = `
         <div class="msg-avatar bot">🤖</div>
         <div style="flex:1;">
-          <div class="${bubbleClass}">${escapeHtml(answer).replace(/\n/g, '<br>')}</div>
+          <div class="${bubbleClass}">${formatAnswer(answer)}</div>
           ${sourcesHtml}
         </div>
       `;
@@ -1153,6 +1183,71 @@
     function scrollToBottom() {
       const container = document.getElementById('messages-container');
       container.scrollTop = container.scrollHeight;
+    }
+
+    function renderInline(escaped) {
+      return escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    }
+
+    function isTableRow(trimmed) {
+      return trimmed.length > 1 && trimmed.startsWith('|') && trimmed.endsWith('|');
+    }
+
+    function isDividerRow(trimmed) {
+      const cells = trimmed.split('|').slice(1, -1).map(c => c.trim());
+      return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c));
+    }
+
+    function tableCells(trimmed) {
+      return trimmed.split('|').slice(1, -1).map(c => renderInline(escapeHtml(c.trim())));
+    }
+
+    function renderTable(block) {
+      const rows = block.filter(r => !isDividerRow(r));
+      if (rows.length === 0) return '';
+      const head = tableCells(rows[0]).map(c => `<th>${c}</th>`).join('');
+      const body = rows.slice(1)
+        .map(r => '<tr>' + tableCells(r).map(c => `<td>${c}</td>`).join('') + '</tr>')
+        .join('');
+      return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    // Escape first, then render a minimal safe subset of Markdown: bullet
+    // lists, **bold**, and pipe tables. No raw HTML from the model can survive.
+    function formatAnswer(text) {
+      if (text === null || text === undefined) return '';
+      const lines = String(text).split('\n');
+      let html = '';
+      let i = 0;
+      while (i < lines.length) {
+        const trimmed = lines[i].trim();
+        if (isTableRow(trimmed)) {
+          const block = [];
+          while (i < lines.length && isTableRow(lines[i].trim())) {
+            block.push(lines[i].trim());
+            i++;
+          }
+          html += renderTable(block);
+          continue;
+        }
+        if (trimmed.startsWith('- ')) {
+          const items = [];
+          while (i < lines.length && lines[i].trim().startsWith('- ')) {
+            items.push(lines[i].trim().slice(2));
+            i++;
+          }
+          html += '<ul>' + items.map(it => `<li>${renderInline(escapeHtml(it))}</li>`).join('') + '</ul>';
+          continue;
+        }
+        if (trimmed === '') {
+          html += '<br>';
+          i++;
+          continue;
+        }
+        html += renderInline(escapeHtml(lines[i])) + '<br>';
+        i++;
+      }
+      return html.replace(/(<br>)+$/, '');
     }
 
     function escapeHtml(str) {

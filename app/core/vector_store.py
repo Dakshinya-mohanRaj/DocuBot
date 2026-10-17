@@ -40,6 +40,11 @@ PER_DOC_CAP = int(os.environ.get("DOCUBOT_PER_DOC_CAP", "2"))
 # Over-fetch before filtering, so the cap does not starve other documents.
 OVERFETCH_FACTOR = 4
 
+# Upper bound on how many chunks document analysis may read at once. Analysis
+# needs the whole document (not just top-ranked passages) but prompt tokens must
+# stay bounded, so this caps the evidence handed to the model.
+ANALYSIS_MAX_CHUNKS = int(os.environ.get("DOCUBOT_ANALYSIS_MAX_CHUNKS", "40"))
+
 _STOPWORDS = {
     "a", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by",
     "can", "did", "do", "does", "for", "from", "get", "had", "has", "have",
@@ -261,6 +266,45 @@ def query(
             break
 
     return selected
+
+
+def get_chunks_for_documents(
+    doc_ids: list[str] | None = None, max_chunks: int | None = None
+) -> list[dict]:
+    """Return every stored chunk, optionally limited to specific documents.
+
+    Used by document analysis, where counting/comparing must see the *whole*
+    document rather than only the top-ranked passages. ``doc_ids`` of ``None``
+    means the entire store. Results are bounded by ``max_chunks``
+    (``DOCUBOT_ANALYSIS_MAX_CHUNKS``, default 40) to cap prompt tokens; callers
+    should treat the result as "the most we are willing to read", not a
+    guaranteed full scan.
+    """
+    budget = max_chunks if max_chunks is not None else ANALYSIS_MAX_CHUNKS
+    where = {"doc_id": {"$in": doc_ids}} if doc_ids else None
+    fetched = _collection.get(where=where, include=["documents", "metadatas"])
+
+    ids = fetched.get("ids") or []
+    documents = fetched.get("documents") or []
+    metadatas = fetched.get("metadatas") or []
+
+    chunks: list[dict] = []
+    for chunk_id, document, metadata in zip(ids, documents, metadatas):
+        metadata = metadata or {}
+        chunks.append(
+            {
+                "id": chunk_id,
+                "text": document,
+                "doc_id": metadata.get("doc_id", "unknown"),
+                "filename": metadata.get("filename") or metadata.get("doc_id", "unknown"),
+                "chunk_index": metadata.get("chunk_index", 0),
+                "page": metadata.get("page"),
+            }
+        )
+
+    # Preserve document order, then chunk order, so analysis is deterministic.
+    chunks.sort(key=lambda c: (c["filename"], c["chunk_index"]))
+    return chunks[:budget]
 
 
 def collection_count() -> int:

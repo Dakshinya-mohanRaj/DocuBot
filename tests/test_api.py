@@ -61,7 +61,9 @@ def test_unsupported_extension_is_rejected(client):
 
 
 def test_chat_without_documents_is_rejected(client):
-    response = client.post("/chat", json={"message": "hello"})
+    # A substantive question is rejected when nothing is ingested. (A greeting
+    # like "hello" is intentionally answered without documents.)
+    response = client.post("/chat", json={"message": "What is the rate limit?"})
     assert response.status_code == 400
     assert "No documents" in response.json()["detail"]
 
@@ -86,15 +88,23 @@ def test_empty_message_is_rejected(client):
     assert response.status_code == 422
 
 
-def test_abstention_cites_nothing(client):
-    """A question no document covers must return no sources at all."""
+def test_abstention_cites_nothing(client, monkeypatch):
+    """A question no document covers must return no sources at all.
+
+    Abstention is now decided by the grounded model (retrieval cannot reliably
+    separate some questions with a cosine floor), so we stub its abstention.
+    """
     _upload(client, "handbook.txt", DOCUMENTS["handbook.txt"])
+    monkeypatch.setattr(
+        "app.routes.chat.generate_answer",
+        lambda q, hits, history: "The uploaded documents do not contain information about that.",
+    )
     response = client.post("/chat", json={"message": "What is the office wifi password?"})
     body = response.json()
     assert response.status_code == 200
     assert body["abstained"] is True
     assert body["sources"] == []
-    assert "couldn't find" in body["answer"].lower()
+    assert "do not contain information" in body["answer"].lower()
 
 
 def test_sources_carry_filename_and_similarity(client, monkeypatch):
@@ -138,13 +148,41 @@ def test_history_is_capped(client, monkeypatch):
     assert seen["len"] <= MAX_HISTORY_TURNS
 
 
-def test_chat_does_not_send_an_llm_call_when_abstaining(client, monkeypatch):
+def test_low_confidence_question_uses_soft_retrieval(client, monkeypatch):
+    """When nothing clears the confident floor, the closest chunks are used.
+
+    Retrieval is recall-first: a vague/meta question ("summarize this PDF") may
+    score below the confident floor yet still be answerable, so the model gets
+    the closest chunks and decides. Here we drive that fallback deterministically.
+    """
     _upload(client, "handbook.txt", DOCUMENTS["handbook.txt"])
 
-    def explode(*args, **kwargs):
-        raise AssertionError("LLM must not be called when nothing is relevant")
+    calls = []
 
-    monkeypatch.setattr("app.routes.chat.generate_answer", explode)
-    response = client.post("/chat", json={"message": "What is the office wifi password?"})
-    assert response.status_code == 200
-    assert response.json()["abstained"] is True
+    def fake_query(question, n_results=4, min_relevance=None, per_doc_cap=None):
+        calls.append(min_relevance)
+        if min_relevance is None:  # confident pass finds nothing
+            return []
+        return [
+            {
+                "doc_id": "handbook.txt",
+                "filename": "handbook.txt",
+                "similarity": 0.2,
+                "relevance": 0.2,
+                "chunk_index": 0,
+                "page": None,
+                "text": "some text",
+            }
+        ]
+
+    monkeypatch.setattr("app.routes.chat.query", fake_query)
+    monkeypatch.setattr(
+        "app.routes.chat.generate_answer",
+        lambda q, hits, history: "Recovered answer [handbook.txt]",
+    )
+
+    body = client.post("/chat", json={"message": "summarize this document"}).json()
+    assert body["abstained"] is False
+    assert body["answer"] == "Recovered answer [handbook.txt]"
+    assert body["sources"], "the soft-retrieved chunks must be cited"
+    assert calls == [None, 0.0], "must try the confident floor, then the soft floor"

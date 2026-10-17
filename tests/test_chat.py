@@ -111,8 +111,12 @@ def test_sources_include_relevance_and_similarity(client):
         assert "relevance" in source
 
 
-def test_abstention_records_history_and_cites_nothing(client):
+def test_abstention_records_history_and_cites_nothing(client, monkeypatch):
     _seed(client, "handbook.txt", "Employees accrue 1.5 days of PTO each full month.")
+    monkeypatch.setattr(
+        "app.routes.chat.generate_answer",
+        lambda q, hits, history: "The uploaded documents do not contain information about that.",
+    )
     body = client.post(
         "/chat", json={"message": "What is the office wifi password?"}
     ).json()
@@ -142,3 +146,82 @@ def test_chat_response_schema_matches_frontend(client):
     assert set(body) >= {"session_id", "answer", "sources", "abstained"}
     for source in body["sources"]:
         assert set(source) >= {"doc_id", "filename", "similarity", "chunk_index"}
+
+
+# --- conversational intents (Features 1 & 4) -------------------------------
+
+def test_greeting_skips_retrieval_and_llm(client, monkeypatch):
+    def explode(*args, **kwargs):
+        raise AssertionError("greeting must not touch retrieval or the LLM")
+
+    monkeypatch.setattr("app.routes.chat.query", explode)
+    monkeypatch.setattr("app.routes.chat.generate_answer", explode)
+
+    body = client.post("/chat", json={"message": "Hi"}).json()
+    assert "DocuBot" in body["answer"]
+    assert body["sources"] == []
+    assert body["abstained"] is False
+    assert body["intent"] == "greeting"
+
+
+def test_greeting_works_with_empty_knowledge_base(client):
+    # No documents ingested, yet a greeting still succeeds.
+    response = client.post("/chat", json={"message": "hello there"})
+    assert response.status_code == 200
+    assert response.json()["intent"] == "greeting"
+
+
+def test_how_are_you_and_thanks_are_conversational(client):
+    assert "doing well" in client.post("/chat", json={"message": "How are you?"}).json()["answer"]
+    assert "welcome" in client.post("/chat", json={"message": "thanks!"}).json()["answer"].lower()
+
+
+def test_capabilities_question_explains_features(client):
+    answer = client.post("/chat", json={"message": "What can you do?"}).json()["answer"]
+    assert "Document Q&A" in answer
+    assert "Summarization" in answer
+    assert "Analysis" in answer
+
+
+def test_greeting_turns_are_recorded_in_session(client):
+    body = client.post("/chat", json={"message": "hi"}).json()
+    history = client.get(f"/sessions/{body['session_id']}/history").json()["history"]
+    assert [t["role"] for t in history] == ["user", "assistant"]
+
+
+def test_greeting_then_question_uses_document_pipeline(client, monkeypatch):
+    _seed(client, "handbook.txt", "Employees receive 20 days of annual leave.")
+    body = client.post(
+        "/chat", json={"message": "hi, how much annual leave do employees get?"}
+    ).json()
+    assert body["intent"] == "document"
+    assert body["sources"], "a greeting followed by a real question must retrieve evidence"
+
+
+# --- document analysis through the API (Feature 3) -------------------------
+
+def test_analysis_question_uses_deterministic_records(client, monkeypatch):
+    _seed(client, "resume.txt", "Alice. Gender: female. Bob. Gender: male.")
+
+    def fake_extract(question, chunks):
+        return {
+            "records": [
+                {"name": "Alice", "gender": "female", "source": "resume.txt", "attributes": {}},
+                {"name": "Bob", "gender": "male", "source": "resume.txt", "attributes": {}},
+                {"name": "Carol", "gender": "unknown", "source": "resume.txt", "attributes": {}},
+            ],
+            "insufficient": False,
+            "notes": "",
+        }
+
+    monkeypatch.setattr("app.core.analysis.extract_records", fake_extract)
+    body = client.post(
+        "/chat", json={"message": "How many candidates are male and female?"}
+    ).json()
+
+    assert body["intent"] == "analysis"
+    assert "| Male | 1 |" in body["answer"]
+    assert "| Female | 1 |" in body["answer"]
+    assert "| Unknown / not stated | 1 |" in body["answer"]
+    assert body["sources"], "analysis must cite the documents it read"
+

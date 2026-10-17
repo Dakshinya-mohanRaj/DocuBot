@@ -44,6 +44,17 @@ def _no_live_llm(monkeypatch):
         "app.routes.chat.generate_answer",
         lambda question, hits, history: "Stub answer [doc]",
     )
+    # Analysis has its own reference to the LLM. By default it reports
+    # "insufficient" so the deterministic path runs without any model call;
+    # analysis tests inject their own records fixture.
+    monkeypatch.setattr(
+        "app.core.analysis.extract_records",
+        lambda question, chunks: {"records": [], "insufficient": True, "notes": ""},
+    )
+    monkeypatch.setattr(
+        "app.core.analysis.generate_answer",
+        lambda question, chunks, history: "Stub analysis fallback [doc]",
+    )
 
 
 @pytest.fixture()

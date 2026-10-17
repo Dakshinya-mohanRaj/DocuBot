@@ -22,6 +22,13 @@ multi-turn conversation memory per session.
 
 - 📥 **Multi-format ingestion** — PDF (`.pdf`), Word (`.docx`), Excel (`.xlsx`), CSV (`.csv`), and text/`.md`
 - 🔍 **Semantic search** — documents are chunked and embedded locally (no extra API key for embeddings)
+- 🗣️ **Conversational assistant** — greetings, small talk, "who are you?" and "what can you do?" are answered
+  directly (no retrieval, no LLM cost, and they work even with an empty knowledge base)
+- 🧭 **Intent routing** — a deterministic layer classifies each message as conversation, document Q&A, or
+  document analysis before any expensive work happens
+- 📊 **Document analysis** — counting and demographic questions ("how many male/female candidates?") are
+  computed in **Python from LLM-extracted records**, so tallies and percentages are deterministic, with the
+  denominator stated explicitly
 - 💬 **Multi-turn chat** — per-session conversation history
 - 📎 **Grounded answers with sources** — every answer cites the document chunks it used
 - 🚫 **No hallucination** — the model abstains with an explicit message when the documents don't answer the question
@@ -99,7 +106,8 @@ Response:
       "page": null
     }
   ],
-  "abstained": false
+  "abstained": false,
+  "intent": "document"
 }
 ```
 
@@ -140,8 +148,44 @@ curl -X DELETE http://localhost:8000/sessions/a1b2c3d4   # clear session
 `similarity` is the **cosine similarity** between the question embedding and the chunk embedding, in `[0, 1]`.
 It is a *relative closeness* signal, **not a probability or a percent-confidence**. The UI displays it as
 `similarity 0.62`, not `62%`. Retrieval ranks by a combined score (`relevance`) that also weights lexical
-term overlap; `DOCUBOT_MIN_RELEVANCE` is the floor below which chunks are discarded so the bot abstains
-instead of citing an unrelated document.
+term overlap; `DOCUBOT_MIN_RELEVANCE` is the confident floor. Below it DocuBot still tries the closest chunks
+and lets the grounded model decide whether they answer the question, so a paraphrase or a meta question
+("summarize this") is not silently dropped by the threshold.
+
+## 🧭 Intent Routing & Document Analysis
+
+Every message is classified **before** any retrieval or LLM call:
+
+| Intent | Example | Behaviour |
+| ------ | ------- | --------- |
+| `greeting` / `small_talk` / `identity` / `help` | "Hi", "How are you?", "Who are you?", "What can you do?" | Answered from a fixed reply. No retrieval, no LLM, works with an empty KB. |
+| `document` | "What is the rate limit?", "Summarize this PDF." | Normal grounded RAG with source citations. |
+| `analysis` | "How many male and female candidates?", "What percentage list Python?" | Deterministic record pipeline (below). |
+
+**Retrieval is recall-first.** Chunks above `DOCUBOT_MIN_RELEVANCE` are used directly. If nothing clears that
+floor, DocuBot falls back to the *closest* chunks and lets the grounded model decide — its prompt makes it say
+the documents don't cover the question when they don't. This matters because a single cosine threshold
+separates poorly: a legitimate paraphrase ("What is the PTO policy?" when the document says "paid time off")
+can score below an unrelated question, and meta questions ("summarize this PDF") score low against every
+chunk. Abstention is therefore enforced by the model, not only by the threshold; when it abstains, no sources
+are shown.
+
+Matching is deliberately conservative: only a whole message, or a message that is *only* a greeting (plus filler
+like "there"), counts as conversational. `"hi, what is the PTO policy?"` starts with a greeting but carries a
+real question, so it is routed to document Q&A. The response includes an `intent` field so clients can tell the
+two apart; existing fields are unchanged.
+
+**Analysis** works in two stages so numbers are not guessed:
+
+1. The LLM extracts structured records (`name`, explicit `gender`, documented `attributes`, `source`) from the
+   relevant documents — reading their **whole** content up to a token budget, not just the top passages.
+2. Python computes counts, totals and percentages from those records, states how many records were examined,
+   separates unknown/unspecified entries, de-duplicates entities that span multiple chunks, and flags
+   contradictory statements.
+
+**Gender is reported only when the document states it explicitly** — never inferred from names, pronouns,
+photographs, or other indirect clues. Undocumented entries are listed as *unknown / not stated* and are
+excluded from percentage denominators (which are stated in the answer).
 
 ## 🧠 Architecture
 
@@ -153,10 +197,13 @@ Browser (SPA) / curl
         │           → write new chunk generation to ChromaDB → drop the old generation
         │
         └─ POST /chat
-              └─ embed question → retrieve + filter top-k chunks from ChromaDB
-                    → build prompt with context + capped session history
-                          → Groq generates grounded answer
-                                → append turn to session store → return answer + sources
+              └─ intent detection
+                    ├─ greeting / small talk / help → fixed reply (no retrieval, no LLM)
+                    └─ document request
+                          └─ embed question → retrieve + filter chunks from ChromaDB
+                                ├─ analysis intent → LLM extracts records → Python tallies → answer + sources
+                                └─ Q&A intent      → Groq generates grounded answer
+                                      → append turn to session store → return answer + sources
 ```
 
 ## 📁 Project Structure
@@ -168,7 +215,9 @@ docubot/
 │   ├── core/
 │   │   ├── chunking.py        # sentence-aware text splitting
 │   │   ├── vector_store.py    # ChromaDB + sentence-transformers (generation-safe writes)
-│   │   ├── llm.py             # Groq client, prompt, timeouts, sanitized errors
+│   │   ├── llm.py             # Groq client, prompts, timeouts, sanitized errors
+│   │   ├── intents.py         # deterministic greeting/small-talk/help routing
+│   │   ├── analysis.py        # record extraction + deterministic tallies (gender-safe)
 │   │   ├── session_store.py   # in-memory conversation history
 │   │   ├── logging_config.py  # structured, secret-free logging
 │   │   └── rate_limit.py      # in-memory per-IP token bucket
@@ -191,7 +240,7 @@ docubot/
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 80 tests, no network/API calls
+python -m pytest tests -q          # 151 tests, no network/API calls
 ```
 
 The suite stubs the LLM by default (an autouse fixture) so **no test spends a paid API call**.
@@ -215,9 +264,10 @@ All variables are optional except `GROQ_API_KEY`. See `.env.example`.
 | `GROQ_API_KEY` | — | **Required.** Groq API key. |
 | `GROQ_MODEL` | `openai/gpt-oss-20b` | Chat model, validated against your account on first use. |
 | `DOCUBOT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Local embedding model. Changing it **requires clearing `data/chroma` and re-ingesting**. |
-| `DOCUBOT_MIN_RELEVANCE` | `0.30` | Combined relevance floor; below it `/chat` abstains. |
+| `DOCUBOT_MIN_RELEVANCE` | `0.30` | Confident-relevance floor. Below it, DocuBot soft-falls-back to the closest chunks and lets the model decide (it abstains in-prompt). |
 | `DOCUBOT_LEXICAL_WEIGHT` | `0.5` | Weight of lexical overlap vs cosine similarity. |
 | `DOCUBOT_PER_DOC_CAP` | `2` | Max chunks one document may contribute per answer. |
+| `DOCUBOT_ANALYSIS_MAX_CHUNKS` | `40` | Max chunks document analysis may read at once (bounds prompt tokens). |
 | `DOCUBOT_CHROMA_PATH` | `./data/chroma` | Vector store location. |
 | `DOCUBOT_COLLECTION` | `docubot_chunks_v2` | Chroma collection name. |
 | `DOCUBOT_LLM_TIMEOUT` | `45` | Per-request LLM timeout (seconds). |
@@ -278,6 +328,15 @@ To keep the knowledge base on Render, upgrade to a paid instance and uncomment t
 - Corpus-wide aggregation questions ("list every limit across all documents") are answered from whichever
   documents score above the relevance floor; the floor deliberately prefers abstaining over padding context
   with irrelevant passages.
+- **Document analysis is bounded by retrieved context.** Analysis reads the whole content of the *relevant*
+  documents up to `DOCUBOT_ANALYSIS_MAX_CHUNKS` (default 40), so on a very large corpus a tally is "the most we
+  read", not a guaranteed exhaustive scan.
+- **Gender is reported only when explicitly documented.** Indirect signals (names, pronouns, photos) are never
+  used; undocumented records are reported as unknown rather than guessed.
+- Analysis relies on the model returning valid JSON; if it doesn't, DocuBot falls back to a normal grounded
+  answer instead of failing.
+- Free-text comparison questions ("compare the two documents") use the standard grounded Q&A path, not the
+  deterministic record pipeline.
 
 ## 🔭 Possible Extensions
 
