@@ -32,13 +32,16 @@ def test_rate_limiter_bounds_memory():
 def test_build_rules_respects_disabled_limits(monkeypatch):
     monkeypatch.setenv("DOCUBOT_RATE_LIMIT_CHAT", "0")
     monkeypatch.setenv("DOCUBOT_RATE_LIMIT_INGEST", "0")
+    monkeypatch.setenv("DOCUBOT_RATE_LIMIT_AUTH", "0")
     assert build_rules() == {}
 
     monkeypatch.setenv("DOCUBOT_RATE_LIMIT_CHAT", "7")
     monkeypatch.setenv("DOCUBOT_RATE_LIMIT_INGEST", "3")
+    monkeypatch.setenv("DOCUBOT_RATE_LIMIT_AUTH", "5")
     rules = build_rules()
     assert rules["/chat"].per_minute == 7
     assert rules["/ingest"].per_minute == 3
+    assert rules["/auth"].per_minute == 5
 
 
 def test_middleware_returns_429_and_exempts_health():

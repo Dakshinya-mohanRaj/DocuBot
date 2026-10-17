@@ -1,6 +1,16 @@
-from fastapi import APIRouter, HTTPException
+"""Backwards-compatible session endpoints, now backed by user-owned
+conversations.
 
-from app.core.session_store import clear_session, get_history
+``session_id`` and ``conversation_id`` refer to the same resource. These routes
+exist so older clients keep working; the preferred surface is /conversations.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core import conversations
+from app.core.db import get_db
+from app.core.dependencies import CurrentUser, require_csrf
 
 router = APIRouter()
 
@@ -18,18 +28,21 @@ def _validate(session_id: str) -> str:
 
 
 @router.get("/sessions/{session_id}/history")
-def history(session_id: str):
+def history(session_id: str, user: CurrentUser, db: Session = Depends(get_db)):
     sid = _validate(session_id)
-    turns = get_history(sid)
+    if conversations.get_conversation(db, user.id, sid) is None:
+        raise HTTPException(status_code=404, detail="No session found with that id")
+    messages = conversations.get_messages(db, user.id, sid)
+    turns = [{"role": m.role, "content": m.content} for m in messages]
     if not turns:
         raise HTTPException(status_code=404, detail="No session found with that id")
     return {"session_id": sid, "history": turns}
 
 
-@router.delete("/sessions/{session_id}")
-def delete_session(session_id: str):
+@router.delete("/sessions/{session_id}", dependencies=[Depends(require_csrf)])
+def delete_session(session_id: str, user: CurrentUser, db: Session = Depends(get_db)):
     sid = _validate(session_id)
-    deleted = clear_session(sid)
+    deleted = conversations.delete_conversation(db, user.id, sid)
     if not deleted:
         raise HTTPException(status_code=404, detail="No session found with that id")
     return {"session_id": sid, "deleted": True}

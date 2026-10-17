@@ -10,23 +10,39 @@ services:
       - key: GROQ_API_KEY
         sync: false
       # Pin the embedding model baked into the image (see Dockerfile). If you
-      # change this you must also clear data/chroma and re-ingest.
+      # change this you must also clear the Chroma store and re-ingest.
       - key: DOCUBOT_EMBEDDING_MODEL
         value: all-MiniLM-L6-v2
-    # ---------------------------------------------------------------------
-    # PERSISTENCE (optional, requires a paid instance type)
-    #
-    # Render's free tier has an ephemeral filesystem: the ChromaDB store at
-    # data/chroma is wiped on every deploy, restart, or spin-down. To keep the
-    # knowledge base, upgrade the plan and mount a persistent disk, then point
-    # DOCUBOT_CHROMA_PATH at it. Uncomment the block below.
-    #
-    # disk:
-    #   name: docubot-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
-    #
-    # and add:
-    #   - key: DOCUBOT_CHROMA_PATH
-    #     value: /var/data/chroma
-    # ---------------------------------------------------------------------
+      # Relational store for accounts, sessions, conversations, and messages.
+      # Set this by hand in the Render dashboard to your Neon connection string
+      # (Neon hands out a `postgresql://...?sslmode=require` URL; the app maps it
+      # to the psycopg3 driver automatically). sync:false keeps it out of git.
+      - key: DOCUBOT_DATABASE_URL
+        sync: false
+      # Cookies must be Secure behind Render's TLS termination.
+      - key: DOCUBOT_COOKIE_SECURE
+        value: "true"
+      # Per-IP throttle for signup/login (credential-stuffing protection).
+      - key: DOCUBOT_RATE_LIMIT_AUTH
+        value: "10"
+
+# ---------------------------------------------------------------------------
+# PERSISTENCE FOR THE VECTOR STORE (optional, requires a paid instance)
+#
+# The free tier has an ephemeral filesystem: the ChromaDB store at data/chroma
+# is wiped on every deploy, restart, or spin-down. User accounts, conversations,
+# and message history live in Neon (a separate managed Postgres) and DO survive;
+# only the raw vector index is lost, so documents must be re-uploaded after a
+# restart. To keep the knowledge base too, upgrade the plan and mount a
+# persistent disk, then point DOCUBOT_CHROMA_PATH at it. Uncomment the block
+# below (it belongs under the service's indentation, i.e. as a sibling of
+# `envVars`) and add the matching env var.
+#
+#   disk:
+#     name: docubot-data
+#     mountPath: /var/data
+#     sizeGB: 1
+#
+#   - key: DOCUBOT_CHROMA_PATH
+#     value: /var/data/chroma
+# ---------------------------------------------------------------------------

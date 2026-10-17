@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -44,6 +45,33 @@ OVERFETCH_FACTOR = 4
 # needs the whole document (not just top-ranked passages) but prompt tokens must
 # stay bounded, so this caps the evidence handed to the model.
 ANALYSIS_MAX_CHUNKS = int(os.environ.get("DOCUBOT_ANALYSIS_MAX_CHUNKS", "40"))
+
+# Sentinel owner for chunks written without an explicit user (direct unit tests,
+# migrations of pre-auth data). Real requests always pass the authenticated
+# user's id, so this value is never reachable through the API.
+DEFAULT_USER_ID = os.environ.get("DOCUBOT_DEFAULT_USER_ID", "_default")
+
+
+def _where(user_id: str | None, extra: dict | None = None) -> dict | None:
+    """Compose a Chroma ``where`` clause, scoping to ``user_id`` when given."""
+    clauses = []
+    if user_id is not None:
+        clauses.append({"user_id": user_id})
+    if extra is not None:
+        clauses.append(extra)
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
+def _count(user_id: str | None = None) -> int:
+    if user_id is None:
+        return _collection.count()
+    found = _collection.get(where={"user_id": user_id}, include=[])
+    return len(found.get("ids") or [])
+
 
 _STOPWORDS = {
     "a", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by",
@@ -91,6 +119,7 @@ def add_chunks(
     chunks: list[str],
     filename: str | None = None,
     metadatas: list[dict] | None = None,
+    user_id: str | None = None,
 ) -> int:
     """Write chunks for doc_id, replacing any previously stored version.
 
@@ -103,10 +132,15 @@ def add_chunks(
     ``metadatas`` may supply per-chunk metadata (e.g. ``{"page": 3}``); it is
     merged with the fixed keys, which always win.
 
+    ``user_id`` scopes the document to one account: replacement only considers
+    this user's chunks, so two users may hold documents with the same name
+    without clobbering each other. When omitted the sentinel owner is used.
+
     Returns the number of chunks genuinely stored (verified by read-back), not
     the number intended.
     """
-    old_ids = (_collection.get(where={"doc_id": doc_id}).get("ids")) or []
+    owner = user_id or DEFAULT_USER_ID
+    old_ids = (_collection.get(where=_where(user_id, {"doc_id": doc_id})).get("ids")) or []
     if not chunks:
         # An empty re-upload is still a replacement: drop the old version.
         if old_ids:
@@ -115,13 +149,22 @@ def add_chunks(
 
     display = filename or doc_id
     generation = uuid.uuid4().hex[:8]
-    ids = [f"{doc_id}::{generation}::{i}" for i in range(len(chunks))]
+    ids = [f"{owner}::{doc_id}::{generation}::{i}" for i in range(len(chunks))]
 
+    ingested_at = datetime.now(timezone.utc).isoformat()
     base_meta = []
     for i in range(len(chunks)):
         extra = (metadatas[i] if metadatas and i < len(metadatas) else None) or {}
         meta = {k: v for k, v in extra.items() if v is not None}
-        meta.update({"doc_id": doc_id, "chunk_index": i, "filename": display})
+        meta.update(
+            {
+                "doc_id": doc_id,
+                "chunk_index": i,
+                "filename": display,
+                "user_id": owner,
+                "created_at": ingested_at,
+            }
+        )
         base_meta.append(meta)
 
     try:
@@ -208,14 +251,15 @@ def query(
     n_results: int = 4,
     min_relevance: float | None = None,
     per_doc_cap: int | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """Return the most relevant chunks, filtered and diversified.
 
-    An empty list means nothing in the store cleared the relevance floor, which
-    callers should treat as "no answer available" rather than passing weak
-    chunks to the model.
+    ``user_id`` restricts retrieval to one account's documents. An empty list
+    means nothing in scope cleared the relevance floor, which callers should
+    treat as "no answer available" rather than passing weak chunks to the model.
     """
-    total = collection_count()
+    total = _count(user_id)
     if total == 0:
         return []
 
@@ -224,7 +268,9 @@ def query(
     n_results = max(1, min(n_results, 8))
 
     fetch = min(total, n_results * OVERFETCH_FACTOR)
-    results = _collection.query(query_texts=[question], n_results=fetch)
+    results = _collection.query(
+        query_texts=[question], n_results=fetch, where=_where(user_id)
+    )
     documents = (results.get("documents") or [[]])[0]
     metadatas = (results.get("metadatas") or [[]])[0]
     distances = (results.get("distances") or [[]])[0]
@@ -269,19 +315,21 @@ def query(
 
 
 def get_chunks_for_documents(
-    doc_ids: list[str] | None = None, max_chunks: int | None = None
+    doc_ids: list[str] | None = None,
+    max_chunks: int | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """Return every stored chunk, optionally limited to specific documents.
 
     Used by document analysis, where counting/comparing must see the *whole*
     document rather than only the top-ranked passages. ``doc_ids`` of ``None``
-    means the entire store. Results are bounded by ``max_chunks``
-    (``DOCUBOT_ANALYSIS_MAX_CHUNKS``, default 40) to cap prompt tokens; callers
-    should treat the result as "the most we are willing to read", not a
-    guaranteed full scan.
+    means the entire store (for the given ``user_id``, when supplied). Results
+    are bounded by ``max_chunks`` (``DOCUBOT_ANALYSIS_MAX_CHUNKS``, default 40)
+    to cap prompt tokens; callers should treat the result as "the most we are
+    willing to read", not a guaranteed full scan.
     """
     budget = max_chunks if max_chunks is not None else ANALYSIS_MAX_CHUNKS
-    where = {"doc_id": {"$in": doc_ids}} if doc_ids else None
+    where = _where(user_id, {"doc_id": {"$in": doc_ids}} if doc_ids else None)
     fetched = _collection.get(where=where, include=["documents", "metadatas"])
 
     ids = fetched.get("ids") or []
@@ -307,19 +355,24 @@ def get_chunks_for_documents(
     return chunks[:budget]
 
 
-def collection_count() -> int:
-    return _collection.count()
+def collection_count(user_id: str | None = None) -> int:
+    return _count(user_id)
 
 
-def document_exists(doc_id: str) -> bool:
-    """True if any chunk for doc_id is stored (non-destructive)."""
-    found = _collection.get(where={"doc_id": doc_id}, limit=1)
+def document_exists(doc_id: str, user_id: str | None = None) -> bool:
+    """True if any chunk for doc_id is stored for this owner (non-destructive)."""
+    found = _collection.get(where=_where(user_id, {"doc_id": doc_id}), limit=1)
     return bool((found or {}).get("ids"))
 
 
-def list_documents() -> list[dict]:
-    """Summarise every document currently in the store, with chunk counts."""
-    fetched = _collection.get(include=["metadatas"])
+def list_documents(user_id: str | None = None) -> list[dict]:
+    """Summarise every document in scope, with chunk counts.
+
+    ``user_id`` of ``None`` returns the whole store (used by tests/admin); the
+    API always passes the authenticated user so one account only ever sees its
+    own knowledge base.
+    """
+    fetched = _collection.get(where=_where(user_id), include=["metadatas"])
     summary: dict[str, dict] = {}
     for metadata in fetched.get("metadatas") or []:
         if not metadata:
@@ -331,16 +384,31 @@ def list_documents() -> list[dict]:
                 "doc_id": doc_id,
                 "filename": metadata.get("filename") or doc_id,
                 "chunks": 0,
+                "created_at": metadata.get("created_at"),
             },
         )
         entry["chunks"] += 1
     return sorted(summary.values(), key=lambda item: item["filename"])
 
 
-def delete_document(doc_id: str) -> int:
-    """Delete all chunks belonging to doc_id. Returns the number removed."""
-    existing = _collection.get(where={"doc_id": doc_id})
+def delete_document(doc_id: str, user_id: str | None = None) -> int:
+    """Delete all chunks belonging to doc_id for this owner. Returns count removed."""
+    existing = _collection.get(where=_where(user_id, {"doc_id": doc_id}))
     ids_to_delete = (existing or {}).get("ids") or []
     if ids_to_delete:
         _collection.delete(ids=ids_to_delete)
     return len(ids_to_delete)
+
+
+def reset_collection() -> None:
+    """Drop and recreate the collection. Destructive; used by the test suite."""
+    global _collection
+    try:
+        _client.delete_collection(COLLECTION_NAME)
+    except Exception:
+        pass
+    _collection = _client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        embedding_function=_embedding_fn,
+        metadata={"hnsw:space": "cosine"},
+    )

@@ -113,13 +113,13 @@ def extract_records(question: str, chunks: list[dict]) -> dict | None:
     return _parse_object(extract_json(question, chunks))
 
 
-def gather_evidence(question: str) -> list[dict]:
+def gather_evidence(question: str, user_id: str | None = None) -> list[dict]:
     """Collect the chunks analysis should read.
 
     Analysis needs whole documents, not just the top-ranked passages, so we
     identify the relevant documents by retrieval and then pull *all* of their
     chunks up to the store's analysis budget. Corpus-wide wording reads every
-    document.
+    document. ``user_id`` restricts everything to the caller's own documents.
     """
     norm = intents.normalize(question)
     corpus_wide = any(
@@ -130,16 +130,16 @@ def gather_evidence(question: str) -> list[dict]:
         )
     )
     if corpus_wide:
-        return vector_store.get_chunks_for_documents(None)
+        return vector_store.get_chunks_for_documents(None, user_id=user_id)
 
-    hits = vector_store.query(question, n_results=8, per_doc_cap=100)
+    hits = vector_store.query(question, n_results=8, per_doc_cap=100, user_id=user_id)
     doc_ids: list[str] = []
     for hit in hits:
         if hit["doc_id"] not in doc_ids:
             doc_ids.append(hit["doc_id"])
     if not doc_ids:
-        return vector_store.get_chunks_for_documents(None)
-    return vector_store.get_chunks_for_documents(doc_ids)
+        return vector_store.get_chunks_for_documents(None, user_id=user_id)
+    return vector_store.get_chunks_for_documents(doc_ids, user_id=user_id)
 
 
 def _dedupe(records: list[dict]) -> list[dict]:

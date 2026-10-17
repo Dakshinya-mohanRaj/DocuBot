@@ -5,10 +5,11 @@ import uuid
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core.chunking import chunk_text
+from app.core.dependencies import CurrentUser, require_csrf
 from app.core.vector_store import (
     add_chunks,
     collection_count,
@@ -39,7 +40,7 @@ except ImportError:
     pass
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
@@ -70,7 +71,7 @@ class IngestTextRequest(BaseModel):
 
 
 @router.post("/ingest/text")
-def ingest_text(payload: IngestTextRequest) -> dict:
+def ingest_text(payload: IngestTextRequest, user: CurrentUser) -> dict:
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="text cannot be empty")
 
@@ -79,25 +80,32 @@ def ingest_text(payload: IngestTextRequest) -> dict:
     if not chunks:
         raise HTTPException(status_code=400, detail="text produced no usable content")
 
-    replaced = document_exists(doc_id)
-    added = add_chunks(doc_id, chunks, filename=payload.doc_id or doc_id)
+    replaced = document_exists(doc_id, user_id=user.id)
+    added = add_chunks(
+        doc_id, chunks, filename=payload.doc_id or doc_id, user_id=user.id
+    )
 
     return {
         "doc_id": doc_id,
         "chunks_added": added,
         "replaced": replaced,
-        "total_chunks_in_store": collection_count(),
+        "total_chunks_in_store": collection_count(user.id),
     }
 
 
 @router.get("/ingest/documents")
-def ingest_documents() -> dict:
-    """List every document currently held in the vector store."""
-    documents = list_documents()
+def ingest_documents(
+    user: CurrentUser,
+    recent: bool = Query(default=False, description="Sort newest-first by upload time."),
+) -> dict:
+    """List every document the authenticated user has uploaded."""
+    documents = list_documents(user_id=user.id)
+    if recent:
+        documents.sort(key=lambda item: item.get("created_at") or "", reverse=True)
     return {
         "documents": documents,
         "document_count": len(documents),
-        "total_chunks_in_store": collection_count(),
+        "total_chunks_in_store": collection_count(user.id),
     }
 
 
@@ -200,7 +208,7 @@ def parse_file_content(filename: str, raw: bytes) -> str:
 
 
 @router.post("/ingest/file")
-async def ingest_file(file: UploadFile = File(...)) -> dict:
+async def ingest_file(user: CurrentUser, file: UploadFile = File(...)) -> dict:
     filename = (file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Uploaded file has no name.")
@@ -241,24 +249,26 @@ async def ingest_file(file: UploadFile = File(...)) -> dict:
 
     # The stored doc_id is a sanitized name; the display name is preserved.
     doc_id = sanitize_doc_id(filename)
-    replaced = document_exists(doc_id)
-    added = add_chunks(doc_id, chunks, filename=filename, metadatas=chunk_meta)
+    replaced = document_exists(doc_id, user_id=user.id)
+    added = add_chunks(
+        doc_id, chunks, filename=filename, metadatas=chunk_meta, user_id=user.id
+    )
 
     return {
         "doc_id": doc_id,
         "chunks_added": added,
         "replaced": replaced,
-        "total_chunks_in_store": collection_count(),
+        "total_chunks_in_store": collection_count(user.id),
     }
 
 
 @router.delete("/ingest/{doc_id:path}")
-def delete_ingested_doc(doc_id: str) -> dict:
-    deleted_count = delete_document(doc_id)
+def delete_ingested_doc(doc_id: str, user: CurrentUser) -> dict:
+    deleted_count = delete_document(doc_id, user_id=user.id)
     if deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"No document named '{doc_id}' was found.")
     return {
         "message": f"Successfully deleted document '{doc_id}'",
         "chunks_deleted": deleted_count,
-        "total_chunks_in_store": collection_count(),
+        "total_chunks_in_store": collection_count(user.id),
     }

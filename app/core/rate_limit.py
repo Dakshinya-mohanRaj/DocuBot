@@ -100,9 +100,14 @@ def build_rules() -> dict[str, RateLimiter]:
     """Create per-path limiters from env config; empty dict when all disabled."""
     chat = int(os.environ.get("DOCUBOT_RATE_LIMIT_CHAT", "20"))
     ingest = int(os.environ.get("DOCUBOT_RATE_LIMIT_INGEST", "10"))
+    # Auth endpoints get their own, tighter limiter so credential-stuffing
+    # attempts are throttled independently of normal chat traffic.
+    auth = int(os.environ.get("DOCUBOT_RATE_LIMIT_AUTH", "10"))
     rules: dict[str, RateLimiter] = {}
     if chat > 0:
         rules["/chat"] = RateLimiter(chat)
     if ingest > 0:
         rules["/ingest"] = RateLimiter(ingest)
+    if auth > 0:
+        rules["/auth"] = RateLimiter(auth)
     return rules

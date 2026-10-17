@@ -1,8 +1,8 @@
 # DocuBot 🤖📄
 
-A **document-grounded RAG chatbot**. Upload your own documents (PDF, Word, Excel, CSV, or plain text), then ask
-questions — DocuBot answers **strictly from that content**, cites which document it pulled from, and keeps
-multi-turn conversation memory per session.
+A **document-grounded RAG chatbot with real user accounts**. Sign up, upload your own documents (PDF, Word,
+Excel, CSV, or plain text), then ask questions — DocuBot answers **strictly from your documents**, cites which
+one it pulled from, and keeps per-user conversation history that survives a restart.
 
 ## 🚀 Live Demo
 
@@ -14,12 +14,18 @@ multi-turn conversation memory per session.
 > ~30–60 s while the process starts and loads the local embedding model. The UI shows a "warming up" badge
 > and disables upload/chat until `/health` responds.
 
-> ⚠️ **Uploaded documents do not survive a restart on the free tier.** Render provides an ephemeral
-> filesystem and `render.yaml` declares no persistent disk, so `data/chroma` is wiped on every deploy,
-> spin-down, or crash. Re-upload after a restart, or enable a persistent disk (see Render deployment below).
+> ⚠️ **On the free tier, uploaded documents do not survive a restart.** Accounts, conversations, and message
+> history live in Postgres and *do* persist; only the ChromaDB vector index (`data/chroma`) is wiped because the
+> filesystem is ephemeral. Re-upload after a restart, or enable a persistent disk (see Render deployment).
 
 ## ✨ Key Features
 
+- 🔐 **Real accounts** — email + password signup/login with **Argon2id** hashing, opaque **HttpOnly session
+  cookies**, and **double-submit CSRF** protection
+- 👤 **Per-user isolation** — each account sees only its own documents and conversations; every read/write is
+  ownership-checked server-side (never trusted from the client)
+- 💬 **Multiple conversations** — a sidebar of recent chats you can open, rename, and delete; history is stored
+  in the database and restored on reload
 - 📥 **Multi-format ingestion** — PDF (`.pdf`), Word (`.docx`), Excel (`.xlsx`), CSV (`.csv`), and text/`.md`
 - 🔍 **Semantic search** — documents are chunked and embedded locally (no extra API key for embeddings)
 - 🗣️ **Conversational assistant** — greetings, small talk, "who are you?" and "what can you do?" are answered
@@ -29,16 +35,19 @@ multi-turn conversation memory per session.
 - 📊 **Document analysis** — counting and demographic questions ("how many male/female candidates?") are
   computed in **Python from LLM-extracted records**, so tallies and percentages are deterministic, with the
   denominator stated explicitly
-- 💬 **Multi-turn chat** — per-session conversation history
+- 💬 **Multi-turn chat** — per-conversation history, persisted
 - 📎 **Grounded answers with sources** — every answer cites the document chunks it used
 - 🚫 **No hallucination** — the model abstains with an explicit message when the documents don't answer the question
-- 🖥️ **Single-page web UI** served at the root route, responsive down to mobile
+- 🖥️ **Redesigned web UI** — ChatGPT-style sidebar (recent chats, your documents, account) and a floating
+  composer with a `+` upload menu, responsive down to mobile
 
 ## 🛠️ Technologies Used
 
 | Layer          | Technology                                                        |
 | -------------- | ----------------------------------------------------------------- |
 | Backend API    | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn                |
+| Database       | SQLAlchemy 2.0 over **Postgres** (prod) / SQLite (dev + tests), `psycopg` v3 |
+| Passwords      | `argon2-cffi` (**Argon2id**)                                      |
 | Vector store   | [ChromaDB](https://www.trychroma.com/)                            |
 | Embeddings     | `sentence-transformers` (`all-MiniLM-L6-v2`, local, CPU)          |
 | LLM (inference)| [Groq](https://groq.com) API (`openai/gpt-oss-20b`, override with `GROQ_MODEL`) |
@@ -56,37 +65,47 @@ pip install -r requirements.txt
 
 cp .env.example .env
 # edit .env and set GROQ_API_KEY
+# optional: set DOCUBOT_DATABASE_URL to a Postgres URL, or leave unset to use SQLite
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open **http://localhost:8000** for the web UI, or **http://localhost:8000/docs** for Swagger.
+Open **http://localhost:8000** for the web UI (sign up first), or **http://localhost:8000/docs** for Swagger.
 
-## 📚 API Walkthrough
+## 🔐 Authentication (curl walkthrough)
 
-**1. Upload a document**
+Every chat/ingest/conversation call requires a logged-in user. The session is an HttpOnly cookie; unsafe
+requests (POST/PATCH/DELETE) must also echo the readable `docubot_csrf` cookie back in the `X-CSRF-Token`
+header (double-submit). The `demo.sh` pattern below uses a cookie jar.
+
+**1. Sign up (or log in)**
 
 ```bash
-curl -X POST http://localhost:8000/ingest/file \
+curl -s -c jar -X POST http://localhost:8000/auth/signup \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"correct-horse-1","display_name":"Me"}'
+# 201 {"user": {"id": "...", "email": "me@example.com", ...}}
+```
+
+Capture the CSRF token the browser would read from its cookie:
+
+```bash
+CSRF=$(grep docubot_csrf jar | awk '{print $NF}')
+```
+
+**2. Upload a document** (authenticated + CSRF)
+
+```bash
+curl -s -b jar -X POST http://localhost:8000/ingest/file \
+  -H "X-CSRF-Token: $CSRF" \
   -F "file=@data/sample_docs/about_docubot.md"
 ```
 
-Response:
-
-```json
-{
-  "doc_id": "about_docubot.md",
-  "chunks_added": 4,
-  "replaced": false,
-  "total_chunks_in_store": 4
-}
-```
-
-**2. Ask a question**
+**3. Ask a question**
 
 ```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
+curl -s -b jar -X POST http://localhost:8000/chat \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
   -d '{"message": "How does DocuBot decide which chunks to use?"}'
 ```
 
@@ -94,38 +113,26 @@ Response:
 
 ```json
 {
-  "session_id": "a1b2c3d4",
+  "session_id": "a1b2c3d4...",
+  "conversation_id": "a1b2c3d4...",
   "answer": "DocuBot embeds your question and retrieves the most similar chunks... [about_docubot.md]",
   "sources": [
-    {
-      "doc_id": "about_docubot.md",
-      "filename": "about_docubot.md",
-      "similarity": 0.62,
-      "relevance": 0.81,
-      "chunk_index": 1,
-      "page": null
-    }
+    { "doc_id": "about_docubot.md", "filename": "about_docubot.md", "similarity": 0.62,
+      "relevance": 0.81, "chunk_index": 1, "page": null }
   ],
   "abstained": false,
   "intent": "document"
 }
 ```
 
-**3. Continue the conversation** — pass the returned `session_id`
+**4. Continue the conversation** — pass the returned `conversation_id` (or legacy `session_id`).
+
+**5. Manage chats and log out**
 
 ```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "And what embedding model does it use?", "session_id": "a1b2c3d4"}'
-```
-
-**4. Manage the knowledge base and sessions**
-
-```bash
-curl http://localhost:8000/ingest/documents              # list documents
-curl -X DELETE http://localhost:8000/ingest/about_docubot.md
-curl http://localhost:8000/sessions/a1b2c3d4/history     # session turns
-curl -X DELETE http://localhost:8000/sessions/a1b2c3d4   # clear session
+curl -s -b jar http://localhost:8000/conversations              # recent chats
+curl -s -b jar -X DELETE -H "X-CSRF-Token: $CSRF" http://localhost:8000/conversations/<id>
+curl -s -b jar -X POST -H "X-CSRF-Token: $CSRF" http://localhost:8000/auth/logout
 ```
 
 ### Endpoints
@@ -134,14 +141,23 @@ curl -X DELETE http://localhost:8000/sessions/a1b2c3d4   # clear session
 | ------ | ---- | ------- |
 | `GET`  | `/` | Single-page web UI |
 | `GET`  | `/health` | Liveness probe — always cheap, no model/LLM work |
-| `GET`  | `/ready` | Readiness — real vector-store/embedding/LLM status, no secrets; 503 when a dependency is unusable |
+| `GET`  | `/ready` | Readiness — database, vector-store, embedding, and LLM status, no secrets |
+| `POST` | `/auth/signup` | Create an account → sets session + CSRF cookies |
+| `POST` | `/auth/login`  | Log in → sets session + CSRF cookies |
+| `POST` | `/auth/logout` | Revoke the session and clear cookies (idempotent) |
+| `GET`  | `/auth/me` | Current user (401 if not signed in) |
+| `POST` | `/conversations` | Start a new chat thread |
+| `GET`  | `/conversations` | List your chats (most recent first) |
+| `GET`  | `/conversations/{id}` | One chat + its messages |
+| `PATCH` | `/conversations/{id}` | Rename a chat |
+| `DELETE` | `/conversations/{id}` | Delete a chat and its messages |
 | `POST` | `/ingest/file` | Upload `.pdf`/`.docx`/`.xlsx`/`.csv`/`.txt`/`.md` (≤ 10 MB) |
 | `POST` | `/ingest/text` | Ingest raw text (`{"text": "...", "doc_id": "optional"}`) |
-| `GET`  | `/ingest/documents` | List documents with chunk counts |
+| `GET`  | `/ingest/documents` | List **your** documents (`?recent=true` sorts newest-first) |
 | `DELETE` | `/ingest/{doc_id}` | Delete a document (404 if absent) |
-| `POST` | `/chat` | Ask a question (`{"message", "session_id"?, "top_k"?}`) |
-| `GET`  | `/sessions/{id}/history` | Conversation turns for a session |
-| `DELETE` | `/sessions/{id}` | Clear a session |
+| `POST` | `/chat` | Ask (`{"message", "conversation_id"?, "top_k"?}`) |
+| `GET`  | `/sessions/{id}/history` | Legacy alias for a conversation's turns |
+| `DELETE` | `/sessions/{id}` | Legacy alias to clear a conversation |
 
 ### About the `similarity` score
 
@@ -187,23 +203,41 @@ two apart; existing fields are unchanged.
 photographs, or other indirect clues. Undocumented entries are listed as *unknown / not stated* and are
 excluded from percentage denominators (which are stated in the answer).
 
+## 🛡️ Security Model
+
+- **Passwords** are hashed with Argon2id; nothing ever returns or logs a hash. Unknown-email logins still run a
+  verify against a throwaway hash so response timing doesn't reveal which accounts exist.
+- **Sessions** are server-side records keyed by the SHA-256 of an opaque cookie token, so a database leak does
+  not hand out live sessions. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` (configurable).
+- **CSRF** uses the double-submit pattern: a readable `docubot_csrf` cookie must be echoed in the `X-CSRF-Token`
+  header, and its hash is bound to the session server-side.
+- **Authorization** is enforced on every route — the user identity comes from the verified session cookie, never
+  from the request body, and document/conversation ids are ownership-checked (404 for another user's id, so we
+  never reveal whether it exists).
+- **Retrieval is tenant-scoped**: every vector query is filtered by the caller's `user_id` in ChromaDB metadata.
+- **Rate limiting** is applied per IP to `/chat`, `/ingest`, and `/auth` (tighter for signup/login).
+
 ## 🧠 Architecture
 
 ```
-Browser (SPA) / curl
+Browser (SPA) — login/signup → session cookie
         │
-        ├─ POST /ingest/file or /ingest/text
-        │     └─ parse (pypdf/docx/openpyxl) → chunk_text() → embed (sentence-transformers)
-        │           → write new chunk generation to ChromaDB → drop the old generation
+        ├─ POST /auth/*          → accounts (Argon2id) → Postgres (users, auth_sessions)
         │
-        └─ POST /chat
-              └─ intent detection
-                    ├─ greeting / small talk / help → fixed reply (no retrieval, no LLM)
-                    └─ document request
-                          └─ embed question → retrieve + filter chunks from ChromaDB
-                                ├─ analysis intent → LLM extracts records → Python tallies → answer + sources
-                                └─ Q&A intent      → Groq generates grounded answer
-                                      → append turn to session store → return answer + sources
+        ├─ POST /ingest/file or /ingest/text   [auth + CSRF]
+        │     └─ parse → chunk_text() → embed → write to ChromaDB (tagged with user_id)
+        │
+        ├─ GET/POST/PATCH/DELETE /conversations [auth + CSRF] → Postgres (conversations, messages)
+        │
+        └─ POST /chat            [auth + CSRF]
+              └─ resolve/create conversation (ownership-checked)
+                    └─ intent detection
+                          ├─ greeting/small talk/help → fixed reply (no retrieval, no LLM)
+                          └─ document request
+                                └─ embed question → retrieve + filter (user-scoped) from ChromaDB
+                                      ├─ analysis intent → LLM extracts records → Python tallies
+                                      └─ Q&A intent      → Groq generates grounded answer
+                                            → persist both turns → return answer + sources
 ```
 
 ## 📁 Project Structure
@@ -211,27 +245,34 @@ Browser (SPA) / curl
 ```
 docubot/
 ├── app/
-│   ├── main.py                # FastAPI app, /health, /ready, CORS, rate limiting
+│   ├── main.py                # FastAPI app, lifespan/init_db, /health, /ready, CORS, rate limiting
 │   ├── core/
+│   │   ├── db.py              # SQLAlchemy engine/session (Postgres or SQLite) + get_db
+│   │   ├── models.py          # User, AuthSession, Conversation, Message
+│   │   ├── security.py        # Argon2id hashing, opaque tokens, cookie config
+│   │   ├── accounts.py        # user + auth-session persistence (hashing-agnostic)
+│   │   ├── conversations.py   # durable per-user conversation/message store
+│   │   ├── dependencies.py    # get_current_user / require_csrf FastAPI dependencies
 │   │   ├── chunking.py        # sentence-aware text splitting
-│   │   ├── vector_store.py    # ChromaDB + sentence-transformers (generation-safe writes)
+│   │   ├── vector_store.py    # ChromaDB + sentence-transformers (user-scoped, generation-safe writes)
 │   │   ├── llm.py             # Groq client, prompts, timeouts, sanitized errors
 │   │   ├── intents.py         # deterministic greeting/small-talk/help routing
 │   │   ├── analysis.py        # record extraction + deterministic tallies (gender-safe)
-│   │   ├── session_store.py   # in-memory conversation history
 │   │   ├── logging_config.py  # structured, secret-free logging
-│   │   └── rate_limit.py      # in-memory per-IP token bucket
+│   │   └── rate_limit.py      # in-memory per-IP token bucket (chat/ingest/auth)
 │   └── routes/
+│       ├── auth.py            # /auth/signup, /login, /logout, /me
+│       ├── conversations.py   # /conversations CRUD
 │       ├── ingest.py
 │       ├── chat.py
-│       └── sessions.py
-├── static/index.html          # single-page web UI
+│       └── sessions.py        # legacy /sessions aliases
+├── static/index.html          # redesigned single-page UI (auth + sidebar + composer)
 ├── scripts/
 │   ├── fixtures.py            # three-document evaluation corpus
 │   └── eval_rag.py            # retrieval + answer-quality evaluation
 ├── tests/                     # pytest suite (no live API calls)
 ├── data/sample_docs/          # sample doc to test with
-├── Dockerfile / render.yaml   # deploy config
+├── Dockerfile / render.yaml   # deploy config (+ managed Postgres)
 ├── requirements.txt / requirements-dev.txt
 └── .env.example
 ```
@@ -240,10 +281,13 @@ docubot/
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 151 tests, no network/API calls
+python -m pytest tests -q          # 173 tests, no network/API calls
 ```
 
-The suite stubs the LLM by default (an autouse fixture) so **no test spends a paid API call**.
+The suite stubs the LLM by default (an autouse fixture) so **no test spends a paid API call**. Every test runs
+against a throwaway SQLite database and an empty vector store; the default `client` fixture is a signed-in user,
+and dedicated suites cover authentication/CSRF (`test_auth.py`) and cross-account isolation
+(`test_multi_tenancy.py`).
 
 A separate, optional evaluation runs against the **live** LLM (costs Groq calls):
 
@@ -257,12 +301,13 @@ It uploads a three-document corpus with deliberately non-overlapping numbers and
 
 ## ⚙️ Configuration
 
-All variables are optional except `GROQ_API_KEY`. See `.env.example`.
+All variables are optional except `GROQ_API_KEY` (and, in production, `DOCUBOT_DATABASE_URL`). See `.env.example`.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `GROQ_API_KEY` | — | **Required.** Groq API key. |
 | `GROQ_MODEL` | `openai/gpt-oss-20b` | Chat model, validated against your account on first use. |
+| `DOCUBOT_DATABASE_URL` | `sqlite:///./data/docubot.db` | Relational DB for accounts/conversations. Use a `postgres://` or `postgresql+psycopg://` URL in production; unset falls back to SQLite. |
 | `DOCUBOT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Local embedding model. Changing it **requires clearing `data/chroma` and re-ingesting**. |
 | `DOCUBOT_MIN_RELEVANCE` | `0.30` | Confident-relevance floor. Below it, DocuBot soft-falls-back to the closest chunks and lets the model decide (it abstains in-prompt). |
 | `DOCUBOT_LEXICAL_WEIGHT` | `0.5` | Weight of lexical overlap vs cosine similarity. |
@@ -270,12 +315,16 @@ All variables are optional except `GROQ_API_KEY`. See `.env.example`.
 | `DOCUBOT_ANALYSIS_MAX_CHUNKS` | `40` | Max chunks document analysis may read at once (bounds prompt tokens). |
 | `DOCUBOT_CHROMA_PATH` | `./data/chroma` | Vector store location. |
 | `DOCUBOT_COLLECTION` | `docubot_chunks_v2` | Chroma collection name. |
+| `DOCUBOT_SESSION_TTL_DAYS` | `14` | Session cookie + server-side record lifetime. |
+| `DOCUBOT_COOKIE_SECURE` | `true` | Mark cookies `Secure`. Set `false` only for local http / tests. |
+| `DOCUBOT_MIN_PASSWORD_LENGTH` | `8` | Minimum signup password length. |
+| `DOCUBOT_MAX_STORED_MESSAGES` | `200` | Messages retained per conversation before oldest are trimmed. |
 | `DOCUBOT_LLM_TIMEOUT` | `45` | Per-request LLM timeout (seconds). |
 | `DOCUBOT_LLM_RETRIES` | `2` | LLM client retries on transient failures. |
-| `DOCUBOT_MAX_STORED_TURNS` | `40` | Stored turns per session before oldest are dropped. |
 | `DOCUBOT_RATE_LIMIT_CHAT` | `20` | Per-IP `/chat` requests per minute (`0` disables). |
 | `DOCUBOT_RATE_LIMIT_INGEST` | `10` | Per-IP `/ingest` requests per minute (`0` disables). |
-| `DOCUBOT_CORS_ORIGINS` | *(empty)* | Comma-separated allowed origins. Empty = same-origin only. |
+| `DOCUBOT_RATE_LIMIT_AUTH` | `10` | Per-IP `/auth` requests per minute (`0` disables). |
+| `DOCUBOT_CORS_ORIGINS` | *(empty)* | Comma-separated allowed origins (credentials allowed for these only). Empty = same-origin only. |
 | `DOCUBOT_LOG_LEVEL` | `INFO` | Root log level. |
 
 ## ☁️ Render Deployment
@@ -285,17 +334,23 @@ All variables are optional except `GROQ_API_KEY`. See `.env.example`.
   `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`
 - **Health check path:** `/health`
 - **Required env var:** `GROQ_API_KEY` (set as a secret in the Render dashboard; never committed).
+- **Database:** point `DOCUBOT_DATABASE_URL` at a **Neon** Postgres (or any managed Postgres). It is a manually-set
+  secret — `render.yaml` lists it with `sync: false` so the connection string stays out of git. Neon hands out a
+  `postgresql://...?sslmode=require` URL; the app maps it to the psycopg3 driver automatically. Accounts and
+  conversations then persist across deploys.
 
 ### Persistence
 
-| Environment | Vector store (`data/chroma`) | Sessions |
-| ----------- | ---------------------------- | -------- |
-| Local dev | Persists on disk | In-memory, lost on restart |
-| Render **free** | **Ephemeral** — lost on deploy/spin-down/restart | In-memory, lost on restart |
-| Render + **persistent disk** | Persists | Still in-memory unless you add a DB |
+| Environment | Accounts / conversations / messages | Vector store (`data/chroma`) |
+| ----------- | ----------------------------------- | ---------------------------- |
+| Local dev | SQLite file (`./data/docubot.db`) | Persists on disk |
+| Render **free** | **Neon Postgres — persists** | **Ephemeral** — lost on deploy/spin-down/restart |
+| Render + **persistent disk** | Neon Postgres — persists | Persists |
 
-To keep the knowledge base on Render, upgrade to a paid instance and uncomment the `disk:` block plus the
-`DOCUBOT_CHROMA_PATH` variable in `render.yaml` (mount path `/var/data`, store path `/var/data/chroma`).
+On Render free the vector index is wiped on restart, so after a deploy users must re-upload documents (their
+accounts and chat history remain). To keep the knowledge base too, upgrade to a paid instance and uncomment the
+`disk:` block plus the `DOCUBOT_CHROMA_PATH` variable in `render.yaml` (mount `/var/data`, store
+`/var/data/chroma`).
 
 ## 🧯 Troubleshooting
 
@@ -307,6 +362,7 @@ To keep the knowledge base on Render, upgrade to a paid instance and uncomment t
   sentence-transformers + ChromaDB are close to that ceiling. The Dockerfile bakes the embedding model into
   the image to avoid a runtime download; if it still OOMs, upgrade the instance type.
 - Confirm `GROQ_API_KEY` is set in **Environment**; without it `/ready` reports the LLM as `unconfigured`.
+- If `/ready` shows `database: {ready: false}`, the Postgres connection string is missing or unreachable.
 
 **Chat returns 503 / "answer service is temporarily unavailable"**
 - Groq is unreachable, rate-limited, or the configured `GROQ_MODEL` isn't available to your account.
@@ -316,15 +372,19 @@ To keep the knowledge base on Render, upgrade to a paid instance and uncomment t
 - 413: file exceeds 10 MB. 400: unsupported type, empty file, or a scanned/image-only PDF (no extractable
   text — OCR is not supported). Check the message the UI shows.
 
+**401 / 403 on API calls**
+- 401: not signed in (no/expired session cookie). 403: CSRF check failed — the `X-CSRF-Token` header is
+  missing or doesn't match the `docubot_csrf` cookie. Sign in again and resend both.
+
 **Documents disappeared**
-- Expected on the Render free tier after any restart. Enable a persistent disk (above) to prevent it.
+- Expected on the Render free tier after any restart (accounts and history persist). Enable a persistent disk
+  (above) to prevent it.
 
 ## ⚠️ Known Limitations
 
-- Session history is **in-memory only** — it does not survive a restart and is not shared between instances.
-- On Render's free tier the filesystem is **ephemeral** (see Persistence).
+- On Render's free tier the **vector store is ephemeral** (accounts/conversations persist in Postgres, but
+  uploaded documents must be re-added after a restart unless a disk is mounted).
 - Rate limiting is **per-instance, in-memory** — it resets on restart and does not coordinate across instances.
-- No authentication. Put an API-key middleware in front before exposing it beyond a demo.
 - Corpus-wide aggregation questions ("list every limit across all documents") are answered from whichever
   documents score above the relevance floor; the floor deliberately prefers abstaining over padding context
   with irrelevant passages.
@@ -337,9 +397,11 @@ To keep the knowledge base on Render, upgrade to a paid instance and uncomment t
   answer instead of failing.
 - Free-text comparison questions ("compare the two documents") use the standard grounded Q&A path, not the
   deterministic record pipeline.
+- Password reset / email verification are **not** implemented — signup is open.
 
 ## 🔭 Possible Extensions
 
-- Persistent storage (SQLite/Redis for sessions, a hosted vector DB for documents)
+- Password reset / email verification
 - Streaming responses (SSE) for `/chat`
-- Authentication + per-user collections
+- Hosted vector DB for the knowledge base (so it survives free-tier restarts)
+- Per-document sharing / team workspaces

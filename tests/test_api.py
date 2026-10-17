@@ -128,7 +128,6 @@ def test_sources_carry_filename_and_similarity(client, monkeypatch):
 
 def test_history_is_capped(client, monkeypatch):
     from app.routes.chat import MAX_HISTORY_TURNS
-    from app.core.session_store import append_turn
 
     _upload(client, "spec.txt", DOCUMENTS["spec.txt"])
 
@@ -140,11 +139,15 @@ def test_history_is_capped(client, monkeypatch):
 
     monkeypatch.setattr("app.routes.chat.generate_answer", capture)
 
-    for i in range(20):
-        append_turn("s1", "user", f"q{i}")
-        append_turn("s1", "assistant", f"a{i}")
+    session_id = None
+    for i in range(10):
+        payload = {"message": f"rate limit q{i}?"}
+        if session_id:
+            payload["session_id"] = session_id
+        response = client.post("/chat", json=payload)
+        assert response.status_code == 200, response.text
+        session_id = response.json()["session_id"]
 
-    client.post("/chat", json={"message": "rate limit?", "session_id": "s1"})
     assert seen["len"] <= MAX_HISTORY_TURNS
 
 
@@ -159,7 +162,7 @@ def test_low_confidence_question_uses_soft_retrieval(client, monkeypatch):
 
     calls = []
 
-    def fake_query(question, n_results=4, min_relevance=None, per_doc_cap=None):
+    def fake_query(question, n_results=4, min_relevance=None, per_doc_cap=None, user_id=None):
         calls.append(min_relevance)
         if min_relevance is None:  # confident pass finds nothing
             return []

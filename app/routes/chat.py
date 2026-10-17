@@ -1,28 +1,29 @@
 import logging
 import re
-import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.core import analysis, intents
+from app.core import analysis, conversations, intents
+from app.core.db import get_db
+from app.core.dependencies import CurrentUser, require_csrf
 from app.core.logging_config import log_event
 from app.core.llm import LLMUnavailable, generate_answer
-from app.core.session_store import append_turn, as_llm_messages
 from app.core.vector_store import collection_count, query
 
 logger = logging.getLogger("docubot.chat")
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 # Prior turns are passed back to the model as trusted conversation. Capping the
 # window stops an early hallucinated answer hardening into "fact" later on,
 # and keeps the prompt inside the model's context budget.
 MAX_HISTORY_TURNS = 6
 
-# Session ids are opaque tokens we issue; bound what we will echo back into the
-# LLM prompt and reject anything that cannot plausibly be one.
-MAX_SESSION_ID_LEN = 64
+# Conversation ids are opaque tokens we issue, but a client may supply one to
+# continue an existing thread. Bound what we will echo back and store.
+MAX_CONVERSATION_ID_LEN = 64
 
 NO_ANSWER = (
     "I couldn't find anything in your documents that answers that question. "
@@ -44,34 +45,73 @@ _ABSTENTION_RE = re.compile(
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+    # ``conversation_id`` is the current field; ``session_id`` is kept as an
+    # accepted alias so existing clients keep working.
+    conversation_id: str | None = None
     session_id: str | None = None
     top_k: int = Field(default=4, ge=1, le=8)
 
 
 class ChatResponse(BaseModel):
     session_id: str
+    conversation_id: str
     answer: str
     sources: list[dict]
     abstained: bool = False
     intent: str = "document"
 
 
-def _resolve_session_id(payload: ChatRequest) -> str:
-    if payload.session_id is None:
-        return str(uuid.uuid4())[:8]
-    sid = payload.session_id.strip()
-    if not (1 <= len(sid) <= MAX_SESSION_ID_LEN):
+def _requested_conversation_id(payload: ChatRequest) -> str | None:
+    raw = payload.conversation_id if payload.conversation_id is not None else payload.session_id
+    if raw is None:
+        return None
+    cid = raw.strip()
+    if not (1 <= len(cid) <= MAX_CONVERSATION_ID_LEN):
         raise HTTPException(
             status_code=422,
-            detail=f"session_id must be 1-{MAX_SESSION_ID_LEN} characters",
+            detail=f"conversation_id must be 1-{MAX_CONVERSATION_ID_LEN} characters",
         )
-    return sid
+    return cid
+
+
+def _record(
+    db: Session,
+    user,
+    conversation_id: str,
+    question: str,
+    answer: str,
+    sources: list[dict],
+    abstained: bool,
+    intent: str,
+) -> None:
+    conversations.append_message(db, user.id, conversation_id, "user", question)
+    conversations.append_message(
+        db,
+        user.id,
+        conversation_id,
+        "assistant",
+        answer,
+        sources=sources,
+        abstained=abstained,
+        intent=intent,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest):
-    # Session validation first so a malformed id is rejected even for a greeting.
-    session_id = _resolve_session_id(payload)
+def chat(payload: ChatRequest, user: CurrentUser, db: Session = Depends(get_db)):
+    # Resolve/create the conversation first; the id is validated even for a
+    # greeting, and an id owned by another user is a 404 (never a data leak).
+    requested = _requested_conversation_id(payload)
+    conversation = conversations.ensure_conversation(db, user.id, requested)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    conversation_id = conversation.id
+
+    # Name a fresh thread after its first message.
+    if not conversations.as_llm_messages(db, user.id, conversation_id, 1):
+        conversations.rename_conversation(
+            db, user.id, conversation_id, conversations.derive_title(payload.message)
+        )
 
     # Conversational messages (greetings, small talk, identity, help) are
     # answered directly: no retrieval, no LLM, and they work with an empty
@@ -79,25 +119,28 @@ def chat(payload: ChatRequest):
     intent = intents.detect(payload.message)
     if intent.is_conversational:
         answer = intent.response or ""
-        append_turn(session_id, "user", payload.message)
-        append_turn(session_id, "assistant", answer)
+        _record(db, user, conversation_id, payload.message, answer, [], False, intent.kind)
         return ChatResponse(
-            session_id=session_id,
+            session_id=conversation_id,
+            conversation_id=conversation_id,
             answer=answer,
             sources=[],
             abstained=False,
             intent=intent.kind,
         )
 
-    if collection_count() == 0:
-        raise HTTPException(status_code=400, detail="No documents ingested yet — call /ingest/text or /ingest/file first")
+    if collection_count(user.id) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No documents ingested yet — call /ingest/text or /ingest/file first",
+        )
 
-    history = as_llm_messages(session_id)[-MAX_HISTORY_TURNS:]
+    history = conversations.as_llm_messages(db, user.id, conversation_id, MAX_HISTORY_TURNS)
 
     # Document analysis (counting, demographic breakdowns, bulk extraction) uses
     # a deterministic record pipeline instead of free-form generation.
     if analysis.is_analysis_request(payload.message):
-        evidence = analysis.gather_evidence(payload.message)
+        evidence = analysis.gather_evidence(payload.message, user_id=user.id)
         try:
             answer = analysis.answer_from_evidence(payload.message, evidence, history)
         except LLMUnavailable as exc:
@@ -106,12 +149,14 @@ def chat(payload: ChatRequest):
             log_event(logger, "analysis_failed", level=logging.ERROR, error=type(exc).__name__)
             raise HTTPException(status_code=502, detail="The answer service failed to respond. Please try again.")
 
-        append_turn(session_id, "user", payload.message)
-        append_turn(session_id, "assistant", answer)
-
         sources = _sources(evidence)
+        _record(
+            db, user, conversation_id, payload.message, answer,
+            sources, not evidence, "analysis",
+        )
         return ChatResponse(
-            session_id=session_id,
+            session_id=conversation_id,
+            conversation_id=conversation_id,
             answer=answer,
             sources=sources,
             abstained=not evidence,
@@ -119,7 +164,7 @@ def chat(payload: ChatRequest):
         )
 
     try:
-        hits = query(payload.message, n_results=payload.top_k)
+        hits = query(payload.message, n_results=payload.top_k, user_id=user.id)
         confident = bool(hits)
         if not hits:
             # Nothing cleared the confident floor. A single cosine threshold
@@ -129,7 +174,9 @@ def chat(payload: ChatRequest):
             # the threshold alone, fall back to the closest chunks and let the
             # grounded model decide — its prompt tells it to say the documents
             # don't cover the question when they don't.
-            hits = query(payload.message, n_results=payload.top_k, min_relevance=0.0)
+            hits = query(
+                payload.message, n_results=payload.top_k, min_relevance=0.0, user_id=user.id
+            )
     except Exception as exc:
         log_event(logger, "retrieval_failed", level=logging.ERROR, error=type(exc).__name__)
         raise HTTPException(status_code=500, detail="Retrieval is temporarily unavailable.")
@@ -137,10 +184,13 @@ def chat(payload: ChatRequest):
     # Even the soft pass found nothing usable (e.g. an empty store): answer
     # honestly without spending an LLM call, and cite nothing.
     if not hits:
-        append_turn(session_id, "user", payload.message)
-        append_turn(session_id, "assistant", NO_ANSWER)
+        _record(db, user, conversation_id, payload.message, NO_ANSWER, [], True, "document")
         return ChatResponse(
-            session_id=session_id, answer=NO_ANSWER, sources=[], abstained=True
+            session_id=conversation_id,
+            conversation_id=conversation_id,
+            answer=NO_ANSWER,
+            sources=[],
+            abstained=True,
         )
 
     try:
@@ -157,11 +207,15 @@ def chat(payload: ChatRequest):
     abstained = (not confident) and _looks_like_abstention(answer)
     sources = [] if abstained else _sources(hits)
 
-    append_turn(session_id, "user", payload.message)
-    append_turn(session_id, "assistant", answer)
-
+    _record(
+        db, user, conversation_id, payload.message, answer, sources, abstained, "document"
+    )
     return ChatResponse(
-        session_id=session_id, answer=answer, sources=sources, abstained=abstained
+        session_id=conversation_id,
+        conversation_id=conversation_id,
+        answer=answer,
+        sources=sources,
+        abstained=abstained,
     )
 
 

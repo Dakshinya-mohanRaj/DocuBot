@@ -9,6 +9,8 @@ __pycache__/
 *.sqlite3
 data/chroma/
 data/.cache/
+data/*.db
+data/
 eval_report.json
 *.ses
 __pycache__/
